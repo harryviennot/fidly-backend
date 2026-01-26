@@ -29,6 +29,13 @@ class UserRepository:
         return result.data
 
     @staticmethod
+    def get_by_auth_id(auth_id: str) -> dict | None:
+        """Get a user by Supabase auth ID."""
+        db = get_db()
+        result = db.table("users").select("*").eq("auth_id", auth_id).maybe_single().execute()
+        return result.data
+
+    @staticmethod
     def get_all() -> list[dict]:
         """Get all users."""
         db = get_db()

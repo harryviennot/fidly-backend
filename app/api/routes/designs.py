@@ -16,6 +16,11 @@ from app.repositories.business import BusinessRepository
 from app.services.apns import APNsClient
 from app.api.deps import get_apns_client
 from app.core.config import settings
+from app.core.permissions import (
+    require_any_access,
+    require_owner_access,
+    BusinessAccessContext,
+)
 
 router = APIRouter()
 
@@ -63,19 +68,15 @@ def _design_to_response(design: dict) -> CardDesignResponse:
 
 
 @router.get("/{business_id}", response_model=list[CardDesignResponse])
-def list_designs(business_id: str):
-    """Get all card designs for a business."""
-    business = BusinessRepository.get_by_id(business_id)
-    if not business:
-        raise HTTPException(status_code=404, detail="Business not found")
-
-    designs = CardDesignRepository.get_all(business_id)
+def list_designs(ctx: BusinessAccessContext = Depends(require_any_access)):
+    """Get all card designs for a business (requires membership)."""
+    designs = CardDesignRepository.get_all(ctx.business_id)
     return [_design_to_response(d) for d in designs]
 
 
 @router.get("/{business_id}/active", response_model=CardDesignResponse | None)
 def get_active_design(business_id: str):
-    """Get the currently active card design for a business."""
+    """Get the currently active card design for a business (public for pass generation)."""
     business = BusinessRepository.get_by_id(business_id)
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
@@ -87,33 +88,35 @@ def get_active_design(business_id: str):
 
 
 @router.get("/{business_id}/{design_id}", response_model=CardDesignResponse)
-def get_design(business_id: str, design_id: str):
-    """Get a specific card design."""
+def get_design(
+    design_id: str,
+    ctx: BusinessAccessContext = Depends(require_any_access)
+):
+    """Get a specific card design (requires membership)."""
     design = CardDesignRepository.get_by_id(design_id)
     if not design:
         raise HTTPException(status_code=404, detail="Design not found")
 
     # Verify design belongs to the business
-    if design.get("business_id") != business_id:
+    if design.get("business_id") != ctx.business_id:
         raise HTTPException(status_code=404, detail="Design not found")
 
     return _design_to_response(design)
 
 
 @router.post("/{business_id}", response_model=CardDesignResponse)
-def create_design(business_id: str, data: CardDesignCreate):
-    """Create a new card design for a business."""
-    business = BusinessRepository.get_by_id(business_id)
-    if not business:
-        raise HTTPException(status_code=404, detail="Business not found")
-
+def create_design(
+    data: CardDesignCreate,
+    ctx: BusinessAccessContext = Depends(require_owner_access)
+):
+    """Create a new card design for a business (requires owner role)."""
     # Convert PassField objects to dicts for storage
     secondary_fields = [f.model_dump() for f in data.secondary_fields]
     auxiliary_fields = [f.model_dump() for f in data.auxiliary_fields]
     back_fields = [f.model_dump() for f in data.back_fields]
 
     design = CardDesignRepository.create(
-        business_id=business_id,
+        business_id=ctx.business_id,
         name=data.name,
         organization_name=data.organization_name,
         description=data.description,
@@ -137,14 +140,18 @@ def create_design(business_id: str, data: CardDesignCreate):
 
 
 @router.put("/{business_id}/{design_id}", response_model=CardDesignResponse)
-def update_design(business_id: str, design_id: str, data: CardDesignUpdate):
-    """Update a card design."""
+def update_design(
+    design_id: str,
+    data: CardDesignUpdate,
+    ctx: BusinessAccessContext = Depends(require_owner_access)
+):
+    """Update a card design (requires owner role)."""
     existing = CardDesignRepository.get_by_id(design_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Design not found")
 
     # Verify design belongs to the business
-    if existing.get("business_id") != business_id:
+    if existing.get("business_id") != ctx.business_id:
         raise HTTPException(status_code=404, detail="Design not found")
 
     # Build update dict from non-None fields
@@ -166,14 +173,17 @@ def update_design(business_id: str, design_id: str, data: CardDesignUpdate):
 
 
 @router.delete("/{business_id}/{design_id}")
-def delete_design(business_id: str, design_id: str):
-    """Delete a card design."""
+def delete_design(
+    design_id: str,
+    ctx: BusinessAccessContext = Depends(require_owner_access)
+):
+    """Delete a card design (requires owner role)."""
     existing = CardDesignRepository.get_by_id(design_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Design not found")
 
     # Verify design belongs to the business
-    if existing.get("business_id") != business_id:
+    if existing.get("business_id") != ctx.business_id:
         raise HTTPException(status_code=404, detail="Design not found")
 
     if existing["is_active"]:
@@ -193,24 +203,24 @@ def delete_design(business_id: str, design_id: str):
 
 @router.post("/{business_id}/{design_id}/activate", response_model=CardDesignResponse)
 async def activate_design(
-    business_id: str,
     design_id: str,
+    ctx: BusinessAccessContext = Depends(require_owner_access),
     apns_client: APNsClient = Depends(get_apns_client)
 ):
-    """Set a design as active and push updates to all customer passes for this business."""
+    """Set a design as active and push updates to all passes (requires owner role)."""
     design = CardDesignRepository.get_by_id(design_id)
     if not design:
         raise HTTPException(status_code=404, detail="Design not found")
 
     # Verify design belongs to the business
-    if design.get("business_id") != business_id:
+    if design.get("business_id") != ctx.business_id:
         raise HTTPException(status_code=404, detail="Design not found")
 
     # Activate the design (deactivates others for this business)
-    design = CardDesignRepository.set_active(business_id, design_id)
+    design = CardDesignRepository.set_active(ctx.business_id, design_id)
 
     # Send push notifications to all registered devices for this business's customers
-    customers = CustomerRepository.get_all(business_id)
+    customers = CustomerRepository.get_all(ctx.business_id)
     for customer in customers:
         push_tokens = DeviceRepository.get_push_tokens(customer["id"])
         if push_tokens:
@@ -220,14 +230,18 @@ async def activate_design(
 
 
 @router.post("/{business_id}/{design_id}/upload/logo", response_model=UploadResponse)
-async def upload_logo(business_id: str, design_id: str, file: UploadFile = File(...)):
-    """Upload a logo image for a design."""
+async def upload_logo(
+    design_id: str,
+    file: UploadFile = File(...),
+    ctx: BusinessAccessContext = Depends(require_owner_access)
+):
+    """Upload a logo image for a design (requires owner role)."""
     design = CardDesignRepository.get_by_id(design_id)
     if not design:
         raise HTTPException(status_code=404, detail="Design not found")
 
     # Verify design belongs to the business
-    if design.get("business_id") != business_id:
+    if design.get("business_id") != ctx.business_id:
         raise HTTPException(status_code=404, detail="Design not found")
 
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -256,8 +270,13 @@ async def upload_logo(business_id: str, design_id: str, file: UploadFile = File(
 
 
 @router.post("/{business_id}/{design_id}/upload/stamp/{stamp_type}", response_model=UploadResponse)
-async def upload_stamp(business_id: str, design_id: str, stamp_type: str, file: UploadFile = File(...)):
-    """Upload a custom stamp icon (filled or empty)."""
+async def upload_stamp(
+    design_id: str,
+    stamp_type: str,
+    file: UploadFile = File(...),
+    ctx: BusinessAccessContext = Depends(require_owner_access)
+):
+    """Upload a custom stamp icon (requires owner role)."""
     if stamp_type not in ["filled", "empty"]:
         raise HTTPException(status_code=400, detail="stamp_type must be 'filled' or 'empty'")
 
@@ -266,7 +285,7 @@ async def upload_stamp(business_id: str, design_id: str, stamp_type: str, file: 
         raise HTTPException(status_code=404, detail="Design not found")
 
     # Verify design belongs to the business
-    if design.get("business_id") != business_id:
+    if design.get("business_id") != ctx.business_id:
         raise HTTPException(status_code=404, detail="Design not found")
 
     if not file.content_type or not file.content_type.startswith("image/"):
