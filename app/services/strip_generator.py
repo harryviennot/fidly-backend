@@ -31,10 +31,12 @@ class StripConfig:
     stamp_border_width: int = 4
 
     # Layout
-    total_stamps: int = 10
-    stamp_radius: int = 80  # Larger stamps to fill width
-    stamp_spacing: int = 55  # More spacing between stamps
-    stamps_per_row: int = 5
+    total_stamps: int = 10  # Must be multiple of 2, max 10
+    # Note: stamp_radius is now calculated dynamically based on total_stamps
+    # These are kept for backwards compatibility but may be overridden
+    stamp_radius: int = 80
+    stamp_spacing: int = 55
+    stamps_per_row: int = 10  # Single row - all stamps in one line
 
     # Text
     show_progress_text: bool = True
@@ -156,6 +158,31 @@ class StripImageGenerator:
         img.paste(resized, (paste_x, paste_y), resized)
         return True
 
+    def _calculate_dynamic_stamp_size(self, width: int) -> tuple[int, int]:
+        """Calculate stamp radius and spacing based on total stamps and width.
+
+        Returns (radius, spacing) tuple.
+        """
+        total = self.config.total_stamps
+
+        # Leave padding on sides (about 5% of width on each side)
+        padding = int(width * 0.05)
+        available_width = width - (2 * padding)
+
+        # Spacing is about 15% of diameter
+        # Formula: total * diameter + (total - 1) * spacing = available_width
+        # With spacing = 0.15 * diameter:
+        # total * diameter + (total - 1) * 0.15 * diameter = available_width
+        # diameter * (total + 0.15 * (total - 1)) = available_width
+        # diameter = available_width / (total + 0.15 * (total - 1))
+
+        spacing_ratio = 0.15
+        diameter = available_width / (total + spacing_ratio * (total - 1))
+        radius = int(diameter / 2)
+        spacing = int(diameter * spacing_ratio)
+
+        return radius, spacing
+
     def _calculate_stamp_positions(
         self,
         width: int,
@@ -163,30 +190,21 @@ class StripImageGenerator:
         radius: int,
         spacing: int,
     ) -> list[tuple[int, int]]:
-        """Calculate (x, y) positions for all stamps."""
+        """Calculate (x, y) positions for all stamps in a single row."""
         positions = []
         total = self.config.total_stamps
-        per_row = self.config.stamps_per_row
 
-        # Calculate total width of stamp row
+        # Single row layout
         stamp_diameter = radius * 2
-        row_width = (per_row * stamp_diameter) + ((per_row - 1) * spacing)
+        row_width = (total * stamp_diameter) + ((total - 1) * spacing)
         start_x = (width - row_width) // 2 + radius
 
-        # Calculate vertical positioning (center the grid, leave room for text)
-        num_rows = (total + per_row - 1) // per_row
-        row_height = stamp_diameter + spacing
-        total_grid_height = num_rows * row_height - spacing
-
-        # Offset upward to leave room for progress text at bottom
-        text_space = 60 if self.config.show_progress_text else 0
-        start_y = (height - total_grid_height - text_space) // 2 + radius + 10
+        # Center vertically
+        center_y = height // 2
 
         for i in range(total):
-            row = i // per_row
-            col = i % per_row
-            x = start_x + col * (stamp_diameter + spacing)
-            y = start_y + row * row_height
+            x = start_x + i * (stamp_diameter + spacing)
+            y = center_y
             positions.append((x, y))
 
         return positions
@@ -213,9 +231,11 @@ class StripImageGenerator:
         # Scale dimensions
         width = (self.config.width * scale) // 3
         height = (self.config.height * scale) // 3
-        radius = (self.config.stamp_radius * scale) // 3
-        spacing = (self.config.stamp_spacing * scale) // 3
-        border_width = max(1, (self.config.stamp_border_width * scale) // 3)
+
+        # Calculate dynamic stamp size based on total stamps
+        radius, spacing = self._calculate_dynamic_stamp_size(width)
+
+        border_width = max(1, max(2, radius // 20))  # Border proportional to radius
         font_size = (self.config.font_size * scale) // 3
 
         # Clamp stamps to valid range
