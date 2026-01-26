@@ -4,83 +4,90 @@ from database.connection import get_db
 class CustomerRepository:
 
     @staticmethod
-    async def create(customer_id: str, name: str, email: str, auth_token: str) -> dict:
-        """Create a new customer."""
-        async with get_db() as db:
-            await db.execute(
-                "INSERT INTO customers (id, name, email, auth_token) VALUES (?, ?, ?, ?)",
-                (customer_id, name, email, auth_token)
-            )
-            await db.commit()
-            return {"id": customer_id, "name": name, "email": email, "stamps": 0}
+    def create(business_id: str, name: str, email: str, auth_token: str) -> dict | None:
+        """Create a new customer for a business."""
+        db = get_db()
+        result = db.table("customers").insert({
+            "business_id": business_id,
+            "name": name,
+            "email": email,
+            "auth_token": auth_token,
+            "stamps": 0,
+        }).execute()
+        return result.data[0] if result.data else None
 
     @staticmethod
-    async def get_by_id(customer_id: str) -> dict | None:
+    def get_by_id(customer_id: str) -> dict | None:
         """Get a customer by ID."""
-        async with get_db() as db:
-            cursor = await db.execute(
-                "SELECT id, name, email, stamps, auth_token, created_at, updated_at FROM customers WHERE id = ?",
-                (customer_id,)
-            )
-            row = await cursor.fetchone()
-            if row:
-                return dict(row)
-            return None
+        db = get_db()
+        result = db.table("customers").select("*").eq("id", customer_id).maybe_single().execute()
+        return result.data
 
     @staticmethod
-    async def get_by_email(email: str) -> dict | None:
-        """Get a customer by email."""
-        async with get_db() as db:
-            cursor = await db.execute(
-                "SELECT id, name, email, stamps, auth_token FROM customers WHERE email = ?",
-                (email,)
-            )
-            row = await cursor.fetchone()
-            if row:
-                return dict(row)
-            return None
+    def get_by_email(business_id: str, email: str) -> dict | None:
+        """Get a customer by email within a business."""
+        db = get_db()
+        result = db.table("customers").select("*").eq(
+            "business_id", business_id
+        ).eq("email", email).maybe_single().execute()
+        return result.data
 
     @staticmethod
-    async def get_by_auth_token(serial_number: str, auth_token: str) -> dict | None:
+    def get_by_auth_token(serial_number: str, auth_token: str) -> dict | None:
         """Verify auth token matches customer."""
-        async with get_db() as db:
-            cursor = await db.execute(
-                "SELECT id, name, email, stamps, auth_token, updated_at FROM customers WHERE id = ? AND auth_token = ?",
-                (serial_number, auth_token)
-            )
-            row = await cursor.fetchone()
-            if row:
-                return dict(row)
-            return None
+        db = get_db()
+        result = db.table("customers").select("*").eq(
+            "id", serial_number
+        ).eq("auth_token", auth_token).maybe_single().execute()
+        return result.data
 
     @staticmethod
-    async def get_all() -> list[dict]:
-        """Get all customers ordered by creation date."""
-        async with get_db() as db:
-            cursor = await db.execute(
-                "SELECT id, name, email, stamps, created_at, updated_at FROM customers ORDER BY created_at DESC"
-            )
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
+    def get_all(business_id: str) -> list[dict]:
+        """Get all customers for a business ordered by creation date."""
+        db = get_db()
+        result = db.table("customers").select("*").eq(
+            "business_id", business_id
+        ).order("created_at", desc=True).execute()
+        return result.data
 
     @staticmethod
-    async def add_stamp(customer_id: str) -> int:
+    def add_stamp(customer_id: str, max_stamps: int = 10) -> int:
         """Add a stamp to a customer. Returns the new stamp count."""
-        async with get_db() as db:
-            cursor = await db.execute(
-                "SELECT stamps FROM customers WHERE id = ?",
-                (customer_id,)
-            )
-            row = await cursor.fetchone()
-            if not row:
-                raise ValueError("Customer not found")
+        db = get_db()
+        # Get current stamps
+        customer = db.table("customers").select("stamps").eq("id", customer_id).maybe_single().execute()
+        if not customer.data:
+            raise ValueError("Customer not found")
 
-            current_stamps = row["stamps"]
-            new_stamps = min(current_stamps + 1, 10)
+        current_stamps = customer.data["stamps"]
+        new_stamps = min(current_stamps + 1, max_stamps)
 
-            await db.execute(
-                "UPDATE customers SET stamps = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (new_stamps, customer_id)
-            )
-            await db.commit()
-            return new_stamps
+        # Update stamps
+        db.table("customers").update({
+            "stamps": new_stamps
+        }).eq("id", customer_id).execute()
+
+        return new_stamps
+
+    @staticmethod
+    def reset_stamps(customer_id: str) -> int:
+        """Reset a customer's stamps to 0. Returns 0."""
+        db = get_db()
+        db.table("customers").update({
+            "stamps": 0
+        }).eq("id", customer_id).execute()
+        return 0
+
+    @staticmethod
+    def update(customer_id: str, **kwargs) -> dict | None:
+        """Update a customer."""
+        db = get_db()
+        result = db.table("customers").update(kwargs).eq("id", customer_id).execute()
+        return result.data[0] if result.data else None
+
+    @staticmethod
+    def delete(customer_id: str) -> bool:
+        """Delete a customer."""
+        db = get_db()
+        result = db.table("customers").delete().eq("id", customer_id).execute()
+        return len(result.data) > 0

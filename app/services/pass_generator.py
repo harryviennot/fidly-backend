@@ -244,8 +244,27 @@ class PassGenerator:
 
         return files
 
-    def generate_pass(self, customer_id: str, name: str, stamps: int, auth_token: str) -> bytes:
+    def generate_pass(
+        self,
+        customer_id: str,
+        name: str,
+        stamps: int,
+        auth_token: str,
+        business_id: str | None = None,
+    ) -> bytes:
         """Generate a complete .pkpass file."""
+        # If business_id is provided and we don't have a design, load it
+        if business_id and not self.design:
+            from app.repositories.card_design import CardDesignRepository
+            design = CardDesignRepository.get_active(business_id)
+            if design:
+                self.design = design
+                self.business_name = design.get("organization_name", self.business_name)
+                self.strip_generator = StripImageGenerator(
+                    config=self._build_strip_config_from_design(design),
+                    assets_dir=self.assets_dir,
+                )
+
         # Start with asset files (includes dynamic strip based on stamps)
         files = self._get_asset_files(stamps=stamps)
 
@@ -317,9 +336,11 @@ def create_pass_generator(design: dict | None = None) -> PassGenerator:
     )
 
 
-async def create_pass_generator_with_active_design() -> PassGenerator:
+def create_pass_generator_with_active_design(business_id: str | None = None) -> PassGenerator:
     """Factory function that loads the active design from the database."""
     from app.repositories.card_design import CardDesignRepository
 
-    design = await CardDesignRepository.get_active()
+    design = None
+    if business_id:
+        design = CardDesignRepository.get_active(business_id)
     return create_pass_generator(design=design)

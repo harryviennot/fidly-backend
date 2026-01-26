@@ -1,6 +1,90 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
+
+
+# ============================================
+# Business Schemas
+# ============================================
+
+class BusinessCreate(BaseModel):
+    name: str
+    url_slug: str = Field(..., pattern=r'^[a-z0-9-]+$', min_length=3, max_length=50)
+    subscription_tier: str = Field(default="pay", pattern=r'^(pay|pro)$')
+    settings: Optional[dict] = None
+
+
+class BusinessUpdate(BaseModel):
+    name: Optional[str] = None
+    subscription_tier: Optional[str] = Field(default=None, pattern=r'^(pay|pro)$')
+    stripe_customer_id: Optional[str] = None
+    settings: Optional[dict] = None
+
+
+class BusinessResponse(BaseModel):
+    id: str
+    name: str
+    url_slug: str
+    subscription_tier: str
+    stripe_customer_id: Optional[str] = None
+    settings: dict = {}
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+# ============================================
+# User Schemas
+# ============================================
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    name: str
+    avatar_url: Optional[str] = None
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    name: str
+    avatar_url: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+# ============================================
+# Membership Schemas
+# ============================================
+
+class MembershipCreate(BaseModel):
+    user_id: str
+    business_id: str
+    role: str = Field(default="scanner", pattern=r'^(owner|scanner)$')
+
+
+class MembershipUpdate(BaseModel):
+    role: str = Field(..., pattern=r'^(owner|scanner)$')
+
+
+class MembershipResponse(BaseModel):
+    id: str
+    user_id: str
+    business_id: str
+    role: str
+    invited_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    user: Optional[UserResponse] = None
+    business: Optional[BusinessResponse] = None
+
+
+# ============================================
+# Customer Schemas
+# ============================================
 
 
 class CustomerCreate(BaseModel):

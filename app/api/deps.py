@@ -1,12 +1,12 @@
 from functools import lru_cache
 
-from app.services.pass_generator import PassGenerator, create_pass_generator_with_active_design
+from app.services.pass_generator import PassGenerator, create_pass_generator
 from app.services.apns import APNsClient, create_apns_client
 
 
-async def get_pass_generator() -> PassGenerator:
-    """Get a PassGenerator with the currently active design."""
-    return await create_pass_generator_with_active_design()
+def get_pass_generator() -> PassGenerator:
+    """Get a PassGenerator (design loaded at generation time via business_id)."""
+    return create_pass_generator()
 
 
 @lru_cache
