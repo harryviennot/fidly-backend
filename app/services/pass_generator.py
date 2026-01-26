@@ -7,6 +7,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from app.services.strip_generator import StripImageGenerator, StripConfig
+
 
 class PassGenerator:
     def __init__(
@@ -19,6 +21,7 @@ class PassGenerator:
         base_url: str,
         business_name: str = "Coffee Shop",
         cert_password: str | None = None,
+        strip_config: StripConfig | None = None,
     ):
         self.team_id = team_id
         self.pass_type_id = pass_type_id
@@ -29,8 +32,14 @@ class PassGenerator:
         self.wwdr_path = wwdr_path
         self.cert_password = cert_password
 
-        # Pass assets directory
-        self.assets_dir = Path(__file__).parent / "pass_assets"
+        # Pass assets directory (relative to project root)
+        self.assets_dir = Path(__file__).parent.parent.parent / "pass_assets"
+
+        # Initialize strip image generator for visual stamps
+        self.strip_generator = StripImageGenerator(
+            config=strip_config or StripConfig(),
+            assets_dir=self.assets_dir,
+        )
 
     def _create_pass_json(self, customer_id: str, name: str, stamps: int, auth_token: str) -> dict:
         """Create the pass.json content."""
@@ -145,8 +154,8 @@ class PassGenerator:
             with open(signature_path, "rb") as f:
                 return f.read()
 
-    def _get_asset_files(self) -> dict[str, bytes]:
-        """Load all pass asset images."""
+    def _get_asset_files(self, stamps: int = 0) -> dict[str, bytes]:
+        """Load all pass asset images and generate dynamic strip."""
         files = {}
         asset_files = [
             "icon.png",
@@ -162,12 +171,16 @@ class PassGenerator:
                 with open(filepath, "rb") as f:
                     files[filename] = f.read()
 
+        # Generate dynamic strip images based on stamp count
+        strip_images = self.strip_generator.generate_all_resolutions(stamps)
+        files.update(strip_images)
+
         return files
 
     def generate_pass(self, customer_id: str, name: str, stamps: int, auth_token: str) -> bytes:
         """Generate a complete .pkpass file."""
-        # Start with asset files
-        files = self._get_asset_files()
+        # Start with asset files (includes dynamic strip based on stamps)
+        files = self._get_asset_files(stamps=stamps)
 
         # Add pass.json
         pass_json = self._create_pass_json(customer_id, name, stamps, auth_token)
@@ -190,18 +203,45 @@ class PassGenerator:
         return buffer.getvalue()
 
 
+def _parse_rgb(color_str: str) -> tuple[int, int, int]:
+    """Parse 'rgb(r,g,b)' or '#RRGGBB' to RGB tuple."""
+    if not color_str:
+        return (139, 90, 43)  # Default brown
+
+    color_str = color_str.strip()
+
+    if color_str.startswith("rgb(") and color_str.endswith(")"):
+        values = color_str[4:-1].split(",")
+        return tuple(int(v.strip()) for v in values)  # type: ignore
+    elif color_str.startswith("#"):
+        hex_color = color_str[1:]
+        return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore
+
+    return (139, 90, 43)  # Default brown
+
+
 def create_pass_generator() -> PassGenerator:
-    """Factory function to create PassGenerator from environment variables."""
-    from dotenv import load_dotenv
-    load_dotenv()
+    """Factory function to create PassGenerator from settings."""
+    from app.core.config import settings
+
+    # Build strip config from settings if customization is configured
+    strip_config = StripConfig(
+        background_color=_parse_rgb(settings.strip_background_color),
+        stamp_filled_color=_parse_rgb(settings.strip_stamp_filled_color),
+        stamp_empty_color=_parse_rgb(settings.strip_stamp_empty_color),
+        stamp_border_color=_parse_rgb(settings.strip_stamp_border_color),
+        custom_filled_icon=settings.strip_custom_filled_icon,
+        custom_empty_icon=settings.strip_custom_empty_icon,
+    )
 
     return PassGenerator(
-        team_id=os.getenv("APPLE_TEAM_ID", ""),
-        pass_type_id=os.getenv("APPLE_PASS_TYPE_ID", ""),
-        cert_path=os.getenv("CERT_PATH", "certs/signerCert.pem"),
-        key_path=os.getenv("KEY_PATH", "certs/signerKey.pem"),
-        wwdr_path=os.getenv("WWDR_PATH", "certs/wwdr.pem"),
-        base_url=os.getenv("BASE_URL", "https://762bfadc669f.ngrok-free.app"),
-        business_name=os.getenv("BUSINESS_NAME", "Coffee Shop"),
-        cert_password=os.getenv("CERT_PASSWORD") or None,
+        team_id=settings.apple_team_id,
+        pass_type_id=settings.apple_pass_type_id,
+        cert_path=settings.cert_path,
+        key_path=settings.key_path,
+        wwdr_path=settings.wwdr_path,
+        base_url=settings.base_url,
+        business_name=settings.business_name,
+        cert_password=settings.cert_password,
+        strip_config=strip_config,
     )

@@ -81,7 +81,8 @@ def create_logo(width: int, height: int, filename: str, output_dir: Path):
 
 
 def main():
-    output_dir = Path(__file__).parent / "pass_assets"
+    # Output to pass_assets at the project root (one level up from scripts/)
+    output_dir = Path(__file__).parent.parent / "pass_assets"
     output_dir.mkdir(exist_ok=True)
 
     # Create icons at different resolutions

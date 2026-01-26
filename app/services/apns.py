@@ -1,8 +1,4 @@
-import os
 import asyncio
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
 class APNsClient:
@@ -81,11 +77,11 @@ class APNsClient:
 
 
 def create_apns_client() -> APNsClient:
-    """Factory function to create APNsClient from environment variables."""
-    # Use combined cert+key file for aioapns
-    cert_path = os.getenv("APNS_CERT_PATH", "certs/combined.pem")
+    """Factory function to create APNsClient from settings."""
+    from app.core.config import settings
+
     return APNsClient(
-        cert_path=cert_path,
-        pass_type_id=os.getenv("APPLE_PASS_TYPE_ID", ""),
-        use_sandbox=os.getenv("APNS_USE_SANDBOX", "false").lower() == "true",
+        cert_path=settings.apns_cert_path,
+        pass_type_id=settings.apple_pass_type_id,
+        use_sandbox=settings.apns_use_sandbox,
     )
