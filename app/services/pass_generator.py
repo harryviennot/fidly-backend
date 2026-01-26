@@ -64,13 +64,13 @@ class PassGenerator:
                         "value": f"{stamps} / 10"
                     }
                 ],
-                "primaryFields": [
-                    {
-                        "key": "name",
-                        "label": "MEMBER",
-                        "value": name
-                    }
-                ],
+                # "primaryFields": [
+                #     {
+                #         "key": "name",
+                #         "label": "MEMBER",
+                #         "value": name
+                #     }
+                # ],
                 "secondaryFields": [
                     {
                         "key": "reward",
@@ -78,13 +78,13 @@ class PassGenerator:
                         "value": "Free Coffee at 10 stamps!"
                     }
                 ],
-                "auxiliaryFields": [
-                    {
-                        "key": "level",
-                        "label": "STATUS",
-                        "value": "Bronze" if stamps < 5 else ("Silver" if stamps < 10 else "Gold")
-                    }
-                ],
+                # "auxiliaryFields": [
+                #     {
+                #         "key": "level",
+                #         "label": "STATUS",
+                #         "value": "Bronze" if stamps < 5 else ("Silver" if stamps < 10 else "Gold")
+                #     }
+                # ],
                 "backFields": [
                     {
                         "key": "terms",

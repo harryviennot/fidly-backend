@@ -32,8 +32,8 @@ class StripConfig:
 
     # Layout
     total_stamps: int = 10
-    stamp_radius: int = 45
-    stamp_spacing: int = 20
+    stamp_radius: int = 80  # Larger stamps to fill width
+    stamp_spacing: int = 55  # More spacing between stamps
     stamps_per_row: int = 5
 
     # Text
@@ -240,20 +240,20 @@ class StripImageGenerator:
             else:
                 self._draw_stamp_circle(draw, x, y, radius, filled, border_width)
 
-        # Add progress text
-        if self.config.show_progress_text:
-            if stamps >= self.config.total_stamps:
-                text = "REWARD READY!"
-            else:
-                text = f"{stamps}/{self.config.total_stamps} stamps"
+        # # Add progress text
+        # if self.config.show_progress_text:
+        #     if stamps >= self.config.total_stamps:
+        #         text = "REWARD READY!"
+        #     else:
+        #         text = f"{stamps}/{self.config.total_stamps} stamps"
 
-            font = self._get_font(font_size)
-            bbox = draw.textbbox((0, 0), text, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_x = (width - text_width) // 2
-            text_y = height - font_size - 20
+        #     font = self._get_font(font_size)
+        #     bbox = draw.textbbox((0, 0), text, font=font)
+        #     text_width = bbox[2] - bbox[0]
+        #     text_x = (width - text_width) // 2
+        #     text_y = height - font_size - 20
 
-            draw.text((text_x, text_y), text, fill=self.config.text_color, font=font)
+        #     draw.text((text_x, text_y), text, fill=self.config.text_color, font=font)
 
         # Convert to PNG bytes
         buffer = io.BytesIO()
