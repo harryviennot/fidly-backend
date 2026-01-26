@@ -1,0 +1,44 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Certificates and secrets
+certs/*.pem
+certs/*.key
+certs/*.p12
+certs/*.cer
+*.pem
+*.key
+*.p12
+*.cer
+*.mobileprovision
+
+# Data
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Distribution
+dist/
+build/
+*.egg-info/
