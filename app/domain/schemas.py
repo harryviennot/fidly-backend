@@ -223,3 +223,43 @@ class UploadResponse(BaseModel):
     asset_type: str
     url: str
     filename: str
+
+
+# ============================================
+# Onboarding Progress Schemas
+# ============================================
+
+class CardDesignProgress(BaseModel):
+    """Card design state during onboarding."""
+    background_color: str = "#1c1c1e"
+    accent_color: str = "#c75b39"
+
+
+class OnboardingProgressCreate(BaseModel):
+    """Request body for saving onboarding progress."""
+    business_name: str
+    url_slug: str
+    owner_name: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    email: Optional[str] = None
+    card_design: Optional[CardDesignProgress] = None
+    current_step: int = Field(default=1, ge=1, le=6)
+    completed_steps: List[int] = []
+
+
+class OnboardingProgressResponse(BaseModel):
+    """Response body for onboarding progress."""
+    id: str
+    user_id: str
+    business_name: str
+    url_slug: str
+    owner_name: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    email: Optional[str] = None
+    card_design: Optional[dict] = None
+    current_step: int
+    completed_steps: List[int]
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None

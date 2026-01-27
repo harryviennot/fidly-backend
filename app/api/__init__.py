@@ -6,6 +6,7 @@ from .routes import (
     designs,
     health,
     memberships,
+    onboarding,
     passes,
     stamps,
     users,
@@ -16,6 +17,9 @@ api_router = APIRouter()
 
 # Health check
 api_router.include_router(health.router, tags=["health"])
+
+# Onboarding
+api_router.include_router(onboarding.router, prefix="/onboarding/progress", tags=["onboarding"])
 
 # Multi-tenant management
 api_router.include_router(businesses.router, prefix="/businesses", tags=["businesses"])
