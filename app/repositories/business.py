@@ -25,14 +25,14 @@ class BusinessRepository:
         """Get a business by ID."""
         db = get_db()
         result = db.table("businesses").select("*").eq("id", business_id).maybe_single().execute()
-        return result.data
+        return result.data if result else None
 
     @staticmethod
     def get_by_slug(url_slug: str) -> dict | None:
         """Get a business by URL slug."""
         db = get_db()
         result = db.table("businesses").select("*").eq("url_slug", url_slug).maybe_single().execute()
-        return result.data
+        return result.data if result else None
 
     @staticmethod
     def get_all() -> list[dict]:

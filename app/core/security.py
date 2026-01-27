@@ -25,14 +25,21 @@ def get_jwks() -> dict:
 def verify_jwt(token: str) -> dict:
     """Verify a Supabase JWT and return the payload."""
     try:
-        # Get JWKS from Supabase
-        jwks = get_jwks()
-
-        # Get the key ID from the token header
+        # Get the algorithm from the token header
         unverified_header = jwt.get_unverified_header(token)
+        alg = unverified_header.get("alg")
         kid = unverified_header.get("kid")
 
-        # Find the matching key
+        if not alg:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: missing algorithm"
+            )
+
+        # Fetch JWKS from Supabase
+        jwks = get_jwks()
+
+        # Find the matching key by kid
         key = None
         for k in jwks.get("keys", []):
             if k.get("kid") == kid:
@@ -42,17 +49,26 @@ def verify_jwt(token: str) -> dict:
         if not key:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: key not found"
+                detail=f"Invalid token: key not found for kid={kid}"
             )
 
-        # Decode and verify the token
+        # Decode and verify using the algorithm from the token
+        # Support common algorithms: RS256, ES256, EdDSA
+        allowed_algs = ["RS256", "ES256", "EdDSA", "HS256"]
+        if alg not in allowed_algs:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid token: unsupported algorithm {alg}"
+            )
+
         payload = jwt.decode(
             token,
             key,
-            algorithms=["RS256"],
+            algorithms=[alg],
             audience="authenticated",
             options={"verify_aud": True}
         )
+
         return payload
 
     except JWTError as e:

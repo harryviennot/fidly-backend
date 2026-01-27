@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, HTTPException, Depends
 
 from app.domain.schemas import BusinessCreate, BusinessUpdate, BusinessResponse
@@ -49,19 +51,42 @@ def list_my_businesses(user: dict = Depends(get_current_user_profile)):
     return [BusinessResponse(**m["businesses"]) for m in memberships]
 
 
-@router.get("/{business_id}", response_model=BusinessResponse)
-def get_business(ctx: BusinessAccessContext = Depends(require_any_access)):
-    """Get a business by ID (requires membership)."""
-    business = BusinessRepository.get_by_id(ctx.business_id)
-    if not business:
-        raise HTTPException(status_code=404, detail="Business not found")
-    return BusinessResponse(**business)
+# Slug routes MUST come before /{business_id} to avoid path conflicts
+@router.get("/slug/{url_slug}/available")
+def check_slug_availability(url_slug: str):
+    """Check if a URL slug is available (public, no auth required)."""
+    # Validate slug format
+    if not url_slug or len(url_slug) < 3:
+        return {"available": False, "reason": "Slug must be at least 3 characters"}
+
+    if len(url_slug) > 50:
+        return {"available": False, "reason": "Slug must be 50 characters or less"}
+
+    # Check if slug contains only valid characters
+    if not re.match(r'^[a-z0-9-]+$', url_slug):
+        return {"available": False, "reason": "Slug can only contain lowercase letters, numbers, and hyphens"}
+
+    business = BusinessRepository.get_by_slug(url_slug)
+    if business:
+        return {"available": False, "reason": "This URL is already taken"}
+
+    return {"available": True}
 
 
 @router.get("/slug/{url_slug}", response_model=BusinessResponse)
 def get_business_by_slug(url_slug: str):
     """Get a business by URL slug (public for customer-facing pages)."""
     business = BusinessRepository.get_by_slug(url_slug)
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    return BusinessResponse(**business)
+
+
+# Dynamic ID routes come after static/slug routes
+@router.get("/{business_id}", response_model=BusinessResponse)
+def get_business(ctx: BusinessAccessContext = Depends(require_any_access)):
+    """Get a business by ID (requires membership)."""
+    business = BusinessRepository.get_by_id(ctx.business_id)
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
     return BusinessResponse(**business)

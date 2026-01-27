@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_publishable_key: str = ""
     supabase_secret_key: str = ""
+    supabase_jwt_secret: str = ""  # JWT secret for HS256 token verification
 
     # Apple Developer
     apple_team_id: str = ""
