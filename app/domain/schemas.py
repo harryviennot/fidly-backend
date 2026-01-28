@@ -232,7 +232,11 @@ class UploadResponse(BaseModel):
 class CardDesignProgress(BaseModel):
     """Card design state during onboarding."""
     background_color: str = "#1c1c1e"
-    accent_color: str = "#c75b39"
+    accent_color: str = "#f97316"
+    icon_color: Optional[str] = None  # Stamp icon color (defaults to accent_color if not set)
+    logo_url: Optional[str] = None
+    stamp_icon: Optional[str] = None  # 'checkmark' | 'coffee' | 'star' | 'heart' | 'gift' | 'thumbsup'
+    reward_icon: Optional[str] = None  # Final stamp (reward) icon: 'gift' | 'trophy' | 'star' | 'crown' | etc.
 
 
 class OnboardingProgressCreate(BaseModel):
