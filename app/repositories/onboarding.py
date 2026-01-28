@@ -48,7 +48,7 @@ class OnboardingRepository:
         """Get onboarding progress for a user."""
         db = get_db()
         result = db.table("onboarding_progress").select("*").eq("user_id", user_id).maybe_single().execute()
-        return result.data
+        return result.data if result else None
 
     @staticmethod
     def delete(user_id: str) -> bool:
