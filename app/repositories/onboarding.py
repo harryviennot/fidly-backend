@@ -41,18 +41,18 @@ class OnboardingRepository:
                 **kwargs
             }).execute()
 
-        return result.data[0] if result.data else None
+        return result.data[0] if result and result.data else None
 
     @staticmethod
     def get_by_user_id(user_id: str) -> dict | None:
         """Get onboarding progress for a user."""
         db = get_db()
-        result = db.table("onboarding_progress").select("*").eq("user_id", user_id).maybe_single().execute()
-        return result.data if result else None
+        result = db.table("onboarding_progress").select("*").eq("user_id", user_id).limit(1).execute()
+        return result.data[0] if result and result.data else None
 
     @staticmethod
     def delete(user_id: str) -> bool:
         """Delete onboarding progress for a user (after they complete onboarding)."""
         db = get_db()
         result = db.table("onboarding_progress").delete().eq("user_id", user_id).execute()
-        return len(result.data) > 0
+        return bool(result and result.data and len(result.data) > 0)

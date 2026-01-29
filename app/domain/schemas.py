@@ -66,11 +66,11 @@ class UserResponse(BaseModel):
 class MembershipCreate(BaseModel):
     user_id: str
     business_id: str
-    role: str = Field(default="scanner", pattern=r'^(owner|scanner)$')
+    role: str = Field(default="scanner", pattern=r'^(owner|admin|scanner)$')
 
 
 class MembershipUpdate(BaseModel):
-    role: str = Field(..., pattern=r'^(owner|scanner)$')
+    role: str = Field(..., pattern=r'^(owner|admin|scanner)$')
 
 
 class MembershipResponse(BaseModel):
@@ -270,3 +270,43 @@ class OnboardingProgressResponse(BaseModel):
     completed_steps: List[int]
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+# ============================================
+# Invitation Schemas
+# ============================================
+
+class InvitationCreate(BaseModel):
+    """Request body for creating an invitation."""
+    email: EmailStr
+    name: Optional[str] = None
+    role: str = Field(default="scanner", pattern=r'^(admin|scanner)$')
+
+
+class InvitationResponse(BaseModel):
+    """Response body for an invitation (internal use)."""
+    id: str
+    business_id: str
+    email: str
+    name: Optional[str] = None
+    role: str
+    token: str
+    status: str
+    invited_by: str
+    expires_at: datetime
+    created_at: Optional[datetime] = None
+    accepted_at: Optional[datetime] = None
+    inviter: Optional[UserResponse] = None
+
+
+class InvitationPublicResponse(BaseModel):
+    """Public response for invitation acceptance page (no sensitive data)."""
+    id: str
+    email: str
+    name: Optional[str] = None
+    role: str
+    status: str
+    expires_at: datetime
+    business_name: str
+    inviter_name: str
+    is_expired: bool

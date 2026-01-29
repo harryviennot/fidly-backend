@@ -14,14 +14,14 @@ class CustomerRepository:
             "auth_token": auth_token,
             "stamps": 0,
         }).execute()
-        return result.data[0] if result.data else None
+        return result.data[0] if result and result.data else None
 
     @staticmethod
     def get_by_id(customer_id: str) -> dict | None:
         """Get a customer by ID."""
         db = get_db()
-        result = db.table("customers").select("*").eq("id", customer_id).maybe_single().execute()
-        return result.data
+        result = db.table("customers").select("*").eq("id", customer_id).limit(1).execute()
+        return result.data[0] if result and result.data else None
 
     @staticmethod
     def get_by_email(business_id: str, email: str) -> dict | None:
@@ -29,8 +29,8 @@ class CustomerRepository:
         db = get_db()
         result = db.table("customers").select("*").eq(
             "business_id", business_id
-        ).eq("email", email).maybe_single().execute()
-        return result.data
+        ).eq("email", email).limit(1).execute()
+        return result.data[0] if result and result.data else None
 
     @staticmethod
     def get_by_auth_token(serial_number: str, auth_token: str) -> dict | None:
@@ -38,8 +38,8 @@ class CustomerRepository:
         db = get_db()
         result = db.table("customers").select("*").eq(
             "id", serial_number
-        ).eq("auth_token", auth_token).maybe_single().execute()
-        return result.data
+        ).eq("auth_token", auth_token).limit(1).execute()
+        return result.data[0] if result and result.data else None
 
     @staticmethod
     def get_all(business_id: str) -> list[dict]:
@@ -48,18 +48,18 @@ class CustomerRepository:
         result = db.table("customers").select("*").eq(
             "business_id", business_id
         ).order("created_at", desc=True).execute()
-        return result.data
+        return result.data if result and result.data else []
 
     @staticmethod
     def add_stamp(customer_id: str, max_stamps: int = 10) -> int:
         """Add a stamp to a customer. Returns the new stamp count."""
         db = get_db()
         # Get current stamps
-        customer = db.table("customers").select("stamps").eq("id", customer_id).maybe_single().execute()
-        if not customer.data:
+        customer = db.table("customers").select("stamps").eq("id", customer_id).limit(1).execute()
+        if not customer or not customer.data:
             raise ValueError("Customer not found")
 
-        current_stamps = customer.data["stamps"]
+        current_stamps = customer.data[0]["stamps"]
         new_stamps = min(current_stamps + 1, max_stamps)
 
         # Update stamps
@@ -83,11 +83,11 @@ class CustomerRepository:
         """Update a customer."""
         db = get_db()
         result = db.table("customers").update(kwargs).eq("id", customer_id).execute()
-        return result.data[0] if result.data else None
+        return result.data[0] if result and result.data else None
 
     @staticmethod
     def delete(customer_id: str) -> bool:
         """Delete a customer."""
         db = get_db()
         result = db.table("customers").delete().eq("id", customer_id).execute()
-        return len(result.data) > 0
+        return bool(result and result.data and len(result.data) > 0)

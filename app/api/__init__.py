@@ -5,6 +5,7 @@ from .routes import (
     customers,
     designs,
     health,
+    invitations,
     memberships,
     onboarding,
     passes,
@@ -25,6 +26,7 @@ api_router.include_router(onboarding.router, prefix="/onboarding/progress", tags
 api_router.include_router(businesses.router, prefix="/businesses", tags=["businesses"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(memberships.router, prefix="/memberships", tags=["memberships"])
+api_router.include_router(invitations.router, prefix="/invitations", tags=["invitations"])
 
 # Business-scoped resources
 api_router.include_router(customers.router, prefix="/customers", tags=["customers"])

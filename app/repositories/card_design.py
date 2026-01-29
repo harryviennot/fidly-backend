@@ -40,14 +40,14 @@ class CardDesignRepository:
             "auxiliary_fields": auxiliary_fields or [],
             "back_fields": back_fields or [],
         }).execute()
-        return result.data[0] if result.data else None
+        return result.data[0] if result and result.data else None
 
     @staticmethod
     def get_by_id(design_id: str) -> dict | None:
         """Get a card design by ID."""
         db = get_db()
-        result = db.table("card_designs").select("*").eq("id", design_id).maybe_single().execute()
-        return result.data
+        result = db.table("card_designs").select("*").eq("id", design_id).limit(1).execute()
+        return result.data[0] if result and result.data else None
 
     @staticmethod
     def get_active(business_id: str) -> dict | None:
@@ -55,8 +55,8 @@ class CardDesignRepository:
         db = get_db()
         result = db.table("card_designs").select("*").eq(
             "business_id", business_id
-        ).eq("is_active", True).maybe_single().execute()
-        return result.data
+        ).eq("is_active", True).limit(1).execute()
+        return result.data[0] if result and result.data else None
 
     @staticmethod
     def get_all(business_id: str) -> list[dict]:
@@ -65,7 +65,7 @@ class CardDesignRepository:
         result = db.table("card_designs").select("*").eq(
             "business_id", business_id
         ).order("created_at", desc=True).execute()
-        return result.data
+        return result.data if result and result.data else []
 
     @staticmethod
     def update(design_id: str, **kwargs) -> dict | None:
@@ -75,14 +75,14 @@ class CardDesignRepository:
 
         db = get_db()
         result = db.table("card_designs").update(kwargs).eq("id", design_id).execute()
-        return result.data[0] if result.data else None
+        return result.data[0] if result and result.data else None
 
     @staticmethod
     def delete(design_id: str) -> bool:
         """Delete a card design. Returns True if deleted."""
         db = get_db()
         result = db.table("card_designs").delete().eq("id", design_id).execute()
-        return len(result.data) > 0
+        return bool(result and result.data and len(result.data) > 0)
 
     @staticmethod
     def set_active(business_id: str, design_id: str) -> dict | None:
@@ -98,4 +98,4 @@ class CardDesignRepository:
             "is_active": True
         }).eq("id", design_id).execute()
 
-        return result.data[0] if result.data else None
+        return result.data[0] if result and result.data else None

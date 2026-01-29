@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # ngrok
     ngrok_api_url: str | None = None
 
+    # Email (Resend)
+    resend_api_key: str = ""
+    web_app_url: str = "http://localhost:3000"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

@@ -44,7 +44,14 @@ def get_user_memberships(user_id: str):
         raise HTTPException(status_code=404, detail="User not found")
 
     memberships = MembershipRepository.get_user_memberships(user_id)
-    return [MembershipResponse(**m) for m in memberships]
+    # Transform 'businesses' key (from Supabase FK join) to 'business' for response schema
+    result = []
+    for m in memberships:
+        membership_data = {**m}
+        if "businesses" in membership_data:
+            membership_data["business"] = membership_data.pop("businesses")
+        result.append(MembershipResponse(**membership_data))
+    return result
 
 
 @router.get("/business/{business_id}", response_model=list[MembershipResponse])
@@ -55,7 +62,14 @@ def get_business_members(business_id: str):
         raise HTTPException(status_code=404, detail="Business not found")
 
     memberships = MembershipRepository.get_business_members(business_id)
-    return [MembershipResponse(**m) for m in memberships]
+    # Transform 'users' key (from Supabase FK join) to 'user' for response schema
+    result = []
+    for m in memberships:
+        membership_data = {**m}
+        if "users" in membership_data:
+            membership_data["user"] = membership_data.pop("users")
+        result.append(MembershipResponse(**membership_data))
+    return result
 
 
 @router.get("/{membership_id}", response_model=MembershipResponse)
