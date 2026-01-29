@@ -9,15 +9,19 @@ class BusinessRepository:
         url_slug: str,
         subscription_tier: str = "pay",
         settings: dict | None = None,
+        logo_url: str | None = None,
     ) -> dict | None:
         """Create a new business."""
         db = get_db()
-        result = db.table("businesses").insert({
+        data = {
             "name": name,
             "url_slug": url_slug,
             "subscription_tier": subscription_tier,
             "settings": settings or {},
-        }).execute()
+        }
+        if logo_url:
+            data["logo_url"] = logo_url
+        result = db.table("businesses").insert(data).execute()
         return result.data[0] if result.data else None
 
     @staticmethod

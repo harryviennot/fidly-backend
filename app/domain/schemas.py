@@ -12,6 +12,7 @@ class BusinessCreate(BaseModel):
     url_slug: str = Field(..., pattern=r'^[a-z0-9-]+$', min_length=3, max_length=50)
     subscription_tier: str = Field(default="pay", pattern=r'^(pay|pro)$')
     settings: Optional[dict] = None
+    logo_url: Optional[str] = None
 
 
 class BusinessUpdate(BaseModel):
@@ -19,6 +20,7 @@ class BusinessUpdate(BaseModel):
     subscription_tier: Optional[str] = Field(default=None, pattern=r'^(pay|pro)$')
     stripe_customer_id: Optional[str] = None
     settings: Optional[dict] = None
+    logo_url: Optional[str] = None
 
 
 class BusinessResponse(BaseModel):
@@ -28,6 +30,7 @@ class BusinessResponse(BaseModel):
     subscription_tier: str
     stripe_customer_id: Optional[str] = None
     settings: dict = {}
+    logo_url: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

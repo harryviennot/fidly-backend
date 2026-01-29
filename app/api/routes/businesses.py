@@ -11,6 +11,7 @@ from app.core.permissions import (
     require_owner_access,
     BusinessAccessContext,
 )
+from app.services.storage import get_storage_service
 
 router = APIRouter()
 
@@ -40,6 +41,28 @@ def create_business(
         business_id=business["id"],
         role="owner"
     )
+
+    # Handle logo: either copy from onboarding bucket or upload base64 directly
+    if data.logo_url:
+        storage = get_storage_service()
+        new_logo_url = None
+
+        if data.logo_url.startswith("data:"):
+            # Base64 data URL - upload directly to businesses bucket
+            new_logo_url = storage.upload_base64_logo_to_business(
+                base64_data=data.logo_url,
+                business_id=business["id"]
+            )
+        elif "onboarding" in data.logo_url:
+            # Onboarding bucket URL - copy to businesses bucket
+            new_logo_url = storage.copy_onboarding_logo_to_business(
+                user_id=user["auth_id"],
+                business_id=business["id"]
+            )
+
+        if new_logo_url:
+            BusinessRepository.update(business["id"], logo_url=new_logo_url)
+            business["logo_url"] = new_logo_url
 
     return BusinessResponse(**business)
 

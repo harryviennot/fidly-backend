@@ -12,6 +12,7 @@ class StorageService:
     """Service for managing file uploads to Supabase Storage."""
 
     ONBOARDING_BUCKET = "onboarding"
+    BUSINESSES_BUCKET = "businesses"
 
     def __init__(self):
         self.supabase = get_supabase_client()
@@ -107,6 +108,94 @@ class StorageService:
         """
         path = f"{user_id}/logo.png"
         return self.delete_file(bucket=self.ONBOARDING_BUCKET, path=path)
+
+    def download_file(self, bucket: str, path: str) -> bytes | None:
+        """
+        Download a file from Supabase Storage.
+
+        Args:
+            bucket: The storage bucket name
+            path: The file path within the bucket
+
+        Returns:
+            The file content as bytes, or None if download failed
+        """
+        try:
+            response = self.supabase.storage.from_(bucket).download(path)
+            return response
+        except Exception:
+            return None
+
+    def upload_business_logo(self, business_id: str, file_data: bytes) -> str:
+        """
+        Upload a logo image for a business.
+
+        Args:
+            business_id: The business's ID
+            file_data: The PNG image data
+
+        Returns:
+            The public URL of the uploaded logo
+        """
+        path = f"{business_id}/logo.png"
+        return self.upload_file(
+            bucket=self.BUSINESSES_BUCKET,
+            path=path,
+            file_data=file_data,
+            content_type="image/png",
+        )
+
+    def copy_onboarding_logo_to_business(
+        self, user_id: str, business_id: str
+    ) -> str | None:
+        """
+        Copy a logo from the onboarding bucket to the businesses bucket.
+
+        Args:
+            user_id: The user's auth ID (used in onboarding path)
+            business_id: The business's ID
+
+        Returns:
+            The public URL of the new logo, or None if copy failed
+        """
+        # Download from onboarding bucket
+        onboarding_path = f"{user_id}/logo.png"
+        file_data = self.download_file(self.ONBOARDING_BUCKET, onboarding_path)
+
+        if not file_data:
+            return None
+
+        # Upload to businesses bucket
+        return self.upload_business_logo(business_id, file_data)
+
+    def upload_base64_logo_to_business(
+        self, base64_data: str, business_id: str
+    ) -> str | None:
+        """
+        Upload a base64 encoded logo directly to the businesses bucket.
+
+        Args:
+            base64_data: The base64 data URL (e.g., "data:image/png;base64,...")
+            business_id: The business's ID
+
+        Returns:
+            The public URL of the uploaded logo, or None if upload failed
+        """
+        import base64
+
+        try:
+            # Parse base64 data URL
+            # Format: data:image/png;base64,<data>
+            if "," not in base64_data:
+                return None
+
+            _, encoded = base64_data.split(",", 1)
+            file_data = base64.b64decode(encoded)
+
+            # Upload to businesses bucket
+            return self.upload_business_logo(business_id, file_data)
+        except Exception:
+            return None
 
 
 # Singleton instance
