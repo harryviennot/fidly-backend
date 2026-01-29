@@ -1,6 +1,93 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
+
+
+# ============================================
+# Business Schemas
+# ============================================
+
+class BusinessCreate(BaseModel):
+    name: str
+    url_slug: str = Field(..., pattern=r'^[a-z0-9-]+$', min_length=3, max_length=50)
+    subscription_tier: str = Field(default="pay", pattern=r'^(pay|pro)$')
+    settings: Optional[dict] = None
+    logo_url: Optional[str] = None
+
+
+class BusinessUpdate(BaseModel):
+    name: Optional[str] = None
+    subscription_tier: Optional[str] = Field(default=None, pattern=r'^(pay|pro)$')
+    stripe_customer_id: Optional[str] = None
+    settings: Optional[dict] = None
+    logo_url: Optional[str] = None
+
+
+class BusinessResponse(BaseModel):
+    id: str
+    name: str
+    url_slug: str
+    subscription_tier: str
+    stripe_customer_id: Optional[str] = None
+    settings: dict = {}
+    logo_url: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+# ============================================
+# User Schemas
+# ============================================
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    name: str
+    avatar_url: Optional[str] = None
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    name: str
+    avatar_url: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+# ============================================
+# Membership Schemas
+# ============================================
+
+class MembershipCreate(BaseModel):
+    user_id: str
+    business_id: str
+    role: str = Field(default="scanner", pattern=r'^(owner|scanner)$')
+
+
+class MembershipUpdate(BaseModel):
+    role: str = Field(..., pattern=r'^(owner|scanner)$')
+
+
+class MembershipResponse(BaseModel):
+    id: str
+    user_id: str
+    business_id: str
+    role: str
+    invited_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    user: Optional[UserResponse] = None
+    business: Optional[BusinessResponse] = None
+
+
+# ============================================
+# Customer Schemas
+# ============================================
 
 
 class CustomerCreate(BaseModel):
@@ -139,3 +226,47 @@ class UploadResponse(BaseModel):
     asset_type: str
     url: str
     filename: str
+
+
+# ============================================
+# Onboarding Progress Schemas
+# ============================================
+
+class CardDesignProgress(BaseModel):
+    """Card design state during onboarding."""
+    background_color: str = "#1c1c1e"
+    accent_color: str = "#f97316"
+    icon_color: Optional[str] = None  # Stamp icon color (defaults to accent_color if not set)
+    logo_url: Optional[str] = None
+    stamp_icon: Optional[str] = None  # 'checkmark' | 'coffee' | 'star' | 'heart' | 'gift' | 'thumbsup'
+    reward_icon: Optional[str] = None  # Final stamp (reward) icon: 'gift' | 'trophy' | 'star' | 'crown' | etc.
+
+
+class OnboardingProgressCreate(BaseModel):
+    """Request body for saving onboarding progress."""
+    business_name: str
+    url_slug: str
+    owner_name: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    email: Optional[str] = None
+    card_design: Optional[CardDesignProgress] = None
+    current_step: int = Field(default=1, ge=1, le=6)
+    completed_steps: List[int] = []
+
+
+class OnboardingProgressResponse(BaseModel):
+    """Response body for onboarding progress."""
+    id: str
+    user_id: str
+    business_name: str
+    url_slug: str
+    owner_name: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    email: Optional[str] = None
+    card_design: Optional[dict] = None
+    current_step: int
+    completed_steps: List[int]
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None

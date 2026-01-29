@@ -8,12 +8,12 @@ router = APIRouter()
 
 
 @router.get("/{customer_id}")
-async def download_pass(
+def download_pass(
     customer_id: str,
     pass_generator: PassGenerator = Depends(get_pass_generator)
 ):
     """Download the .pkpass file for a customer."""
-    customer = await CustomerRepository.get_by_id(customer_id)
+    customer = CustomerRepository.get_by_id(customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
@@ -22,6 +22,7 @@ async def download_pass(
         name=customer["name"],
         stamps=customer["stamps"],
         auth_token=customer["auth_token"],
+        business_id=customer.get("business_id"),
     )
 
     safe_name = customer["name"].encode("ascii", "ignore").decode("ascii").replace('"', "")

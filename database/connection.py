@@ -1,23 +1,29 @@
-import aiosqlite
-from contextlib import asynccontextmanager
+from supabase import Client
 
 from app.core.config import settings
-from .schema import SCHEMA
 
 
-async def init_db():
-    """Initialize the database with schema."""
-    async with aiosqlite.connect(settings.database_path) as db:
-        await db.executescript(SCHEMA)
-        await db.commit()
+def init_db():
+    """Initialize database connection - verify Supabase connection.
 
+    Note: Schema is managed via Supabase migrations, not here.
+    """
+    if not settings.supabase_url or not settings.supabase_secret_key:
+        print("WARNING: Supabase credentials not configured. Database features disabled.")
+        return
 
-@asynccontextmanager
-async def get_db():
-    """Get a database connection."""
-    db = await aiosqlite.connect(settings.database_path)
-    db.row_factory = aiosqlite.Row
     try:
-        yield db
-    finally:
-        await db.close()
+        from .supabase_client import get_supabase_client
+        client = get_supabase_client()
+        # Try a simple query - may fail if migrations haven't run yet
+        client.table("businesses").select("id").limit(1).execute()
+        print("Supabase connection verified")
+    except Exception as e:
+        print(f"WARNING: Supabase connection check failed: {e}")
+        print("Make sure migrations have been run and credentials are correct.")
+
+
+def get_db() -> Client:
+    """Get database client - Supabase compatible."""
+    from .supabase_client import get_supabase_client
+    return get_supabase_client()

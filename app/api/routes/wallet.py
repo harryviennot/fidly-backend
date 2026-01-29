@@ -1,4 +1,3 @@
-import uuid
 import time
 
 from fastapi import APIRouter, HTTPException, Header, Body, Response, Depends
@@ -13,7 +12,7 @@ router = APIRouter()
 
 
 @router.post("/v1/devices/{device_library_id}/registrations/{pass_type_id}/{serial_number}")
-async def register_device_endpoint(
+def register_device_endpoint(
     device_library_id: str,
     pass_type_id: str,
     serial_number: str,
@@ -25,7 +24,7 @@ async def register_device_endpoint(
     if not auth_token:
         raise HTTPException(status_code=401, detail="Authorization required")
 
-    customer = await CustomerRepository.get_by_auth_token(serial_number, auth_token)
+    customer = CustomerRepository.get_by_auth_token(serial_number, auth_token)
     if not customer:
         raise HTTPException(status_code=401, detail="Invalid authentication")
 
@@ -33,8 +32,7 @@ async def register_device_endpoint(
     if not push_token:
         raise HTTPException(status_code=400, detail="pushToken required")
 
-    registration_id = str(uuid.uuid4())
-    await DeviceRepository.register(registration_id, serial_number, device_library_id, push_token)
+    DeviceRepository.register(serial_number, device_library_id, push_token)
 
     print(f"Device registered: {device_library_id[:20]}... for customer {serial_number[:8]}...")
 
@@ -42,7 +40,7 @@ async def register_device_endpoint(
 
 
 @router.delete("/v1/devices/{device_library_id}/registrations/{pass_type_id}/{serial_number}")
-async def unregister_device_endpoint(
+def unregister_device_endpoint(
     device_library_id: str,
     pass_type_id: str,
     serial_number: str,
@@ -53,11 +51,11 @@ async def unregister_device_endpoint(
     if not auth_token:
         raise HTTPException(status_code=401, detail="Authorization required")
 
-    customer = await CustomerRepository.get_by_auth_token(serial_number, auth_token)
+    customer = CustomerRepository.get_by_auth_token(serial_number, auth_token)
     if not customer:
         raise HTTPException(status_code=401, detail="Invalid authentication")
 
-    await DeviceRepository.unregister(serial_number, device_library_id)
+    DeviceRepository.unregister(serial_number, device_library_id)
 
     print(f"Device unregistered: {device_library_id[:20]}... for customer {serial_number[:8]}...")
 
@@ -65,13 +63,13 @@ async def unregister_device_endpoint(
 
 
 @router.get("/v1/devices/{device_library_id}/registrations/{pass_type_id}")
-async def get_serial_numbers(
+def get_serial_numbers(
     device_library_id: str,
     pass_type_id: str,
     passesUpdatedSince: str | None = None,
 ):
     """Get list of passes registered to this device that have been updated."""
-    serial_numbers = await DeviceRepository.get_serial_numbers_for_device(device_library_id)
+    serial_numbers = DeviceRepository.get_serial_numbers_for_device(device_library_id)
 
     if not serial_numbers:
         return Response(status_code=204)
@@ -83,7 +81,7 @@ async def get_serial_numbers(
 
 
 @router.get("/v1/passes/{pass_type_id}/{serial_number}")
-async def get_latest_pass(
+def get_latest_pass(
     pass_type_id: str,
     serial_number: str,
     authorization: str | None = Header(None),
@@ -94,7 +92,7 @@ async def get_latest_pass(
     if not auth_token:
         raise HTTPException(status_code=401, detail="Authorization required")
 
-    customer = await CustomerRepository.get_by_auth_token(serial_number, auth_token)
+    customer = CustomerRepository.get_by_auth_token(serial_number, auth_token)
     if not customer:
         raise HTTPException(status_code=401, detail="Invalid authentication")
 
@@ -103,6 +101,7 @@ async def get_latest_pass(
         name=customer["name"],
         stamps=customer["stamps"],
         auth_token=customer["auth_token"],
+        business_id=customer.get("business_id"),
     )
 
     return Response(
@@ -115,7 +114,7 @@ async def get_latest_pass(
 
 
 @router.post("/v1/log")
-async def receive_logs(body: dict = Body(...)):
+def receive_logs(body: dict = Body(...)):
     """Receive error logs from Apple Wallet."""
     logs = body.get("logs", [])
     for log in logs:
