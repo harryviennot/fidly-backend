@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Header
+from typing import Optional
 
 from app.domain.schemas import StampResponse
 from app.repositories.customer import CustomerRepository
 from app.repositories.card_design import CardDesignRepository
 from app.repositories.device import DeviceRepository
+from app.repositories.membership import MembershipRepository
 from app.services.apns import APNsClient
 from app.api.deps import get_apns_client
 
@@ -13,9 +15,13 @@ router = APIRouter()
 @router.post("/{customer_id}", response_model=StampResponse)
 async def add_customer_stamp(
     customer_id: str,
-    apns_client: APNsClient = Depends(get_apns_client)
+    apns_client: APNsClient = Depends(get_apns_client),
+    x_scanner_user_id: Optional[str] = Header(None, alias="X-Scanner-User-Id"),
 ):
-    """Add a stamp to a customer and trigger push notification."""
+    """Add a stamp to a customer and trigger push notification.
+
+    Optionally pass X-Scanner-User-Id header to track which team member performed the scan.
+    """
     customer = CustomerRepository.get_by_id(customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -37,6 +43,14 @@ async def add_customer_stamp(
         )
 
     new_stamps = CustomerRepository.add_stamp(customer_id, max_stamps)
+
+    # Track scanner activity if user_id is provided
+    if x_scanner_user_id and business_id:
+        try:
+            MembershipRepository.record_scan_activity(x_scanner_user_id, business_id)
+        except Exception:
+            # Don't fail the stamp operation if activity tracking fails
+            pass
 
     push_tokens = DeviceRepository.get_push_tokens(customer_id)
     if push_tokens:

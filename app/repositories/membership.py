@@ -88,3 +88,30 @@ class MembershipRepository:
             "user_id", user_id
         ).eq("business_id", business_id).execute()
         return bool(result and result.data and len(result.data) > 0)
+
+    @staticmethod
+    @with_retry()
+    def record_scan_activity(user_id: str, business_id: str) -> dict | None:
+        """Record a scan activity for a team member (updates last_active_at and increments scans_count)."""
+        db = get_db()
+        # First get the current membership to increment scans_count
+        membership = MembershipRepository.get_membership(user_id, business_id)
+        if not membership:
+            return None
+
+        current_scans = membership.get("scans_count") or 0
+        result = db.table("memberships").update({
+            "last_active_at": "now()",
+            "scans_count": current_scans + 1
+        }).eq("user_id", user_id).eq("business_id", business_id).execute()
+        return result.data[0] if result and result.data else None
+
+    @staticmethod
+    @with_retry()
+    def update_activity(user_id: str, business_id: str) -> dict | None:
+        """Update last_active_at timestamp for a team member."""
+        db = get_db()
+        result = db.table("memberships").update({
+            "last_active_at": "now()"
+        }).eq("user_id", user_id).eq("business_id", business_id).execute()
+        return result.data[0] if result and result.data else None

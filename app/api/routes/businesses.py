@@ -1,6 +1,6 @@
 import re
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, File, UploadFile
 
 from app.domain.schemas import BusinessCreate, BusinessUpdate, BusinessResponse
 from app.repositories.business import BusinessRepository
@@ -146,3 +146,65 @@ def delete_business(ctx: BusinessAccessContext = Depends(require_owner_access)):
     if not deleted:
         raise HTTPException(status_code=500, detail="Failed to delete business")
     return {"message": "Business deleted successfully"}
+
+
+@router.post("/{business_id}/logo")
+async def upload_business_logo(
+    file: UploadFile = File(...),
+    ctx: BusinessAccessContext = Depends(require_owner_access),
+):
+    """Upload a new logo for the business (deletes old one first)."""
+    # Validate file type
+    if file.content_type not in ["image/png", "image/jpeg"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Only PNG and JPG are allowed."
+        )
+
+    # Validate file size (max 2MB)
+    file_data = await file.read()
+    if len(file_data) > 2 * 1024 * 1024:
+        raise HTTPException(
+            status_code=400,
+            detail="File too large. Maximum size is 2MB."
+        )
+
+    storage = get_storage_service()
+
+    # Delete old logo if it exists
+    existing = BusinessRepository.get_by_id(ctx.business_id)
+    if existing and existing.get("logo_url"):
+        old_path = f"{ctx.business_id}/logo.png"
+        storage.delete_file(storage.BUSINESSES_BUCKET, old_path)
+
+    # Upload new logo
+    new_url = storage.upload_business_logo(ctx.business_id, file_data)
+    if not new_url:
+        raise HTTPException(status_code=500, detail="Failed to upload logo")
+
+    # Update business record
+    BusinessRepository.update(ctx.business_id, logo_url=new_url)
+
+    return {"url": new_url}
+
+
+@router.delete("/{business_id}/logo")
+def delete_business_logo(ctx: BusinessAccessContext = Depends(require_owner_access)):
+    """Delete the business logo."""
+    existing = BusinessRepository.get_by_id(ctx.business_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    if not existing.get("logo_url"):
+        return {"message": "No logo to delete"}
+
+    storage = get_storage_service()
+
+    # Delete the logo file
+    path = f"{ctx.business_id}/logo.png"
+    storage.delete_file(storage.BUSINESSES_BUCKET, path)
+
+    # Clear logo_url in database
+    BusinessRepository.update(ctx.business_id, logo_url=None)
+
+    return {"message": "Logo deleted successfully"}

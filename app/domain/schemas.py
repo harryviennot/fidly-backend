@@ -81,6 +81,8 @@ class MembershipResponse(BaseModel):
     invited_by: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    last_active_at: Optional[datetime] = None
+    scans_count: Optional[int] = 0
     user: Optional[UserResponse] = None
     business: Optional[BusinessResponse] = None
 
