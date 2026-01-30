@@ -1,6 +1,16 @@
+import functools
+import logging
+import time
+from typing import Callable, TypeVar
+
+import httpx
 from supabase import Client
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 def init_db():
@@ -27,3 +37,38 @@ def get_db() -> Client:
     """Get database client - Supabase compatible."""
     from .supabase_client import get_supabase_client
     return get_supabase_client()
+
+
+def with_retry(max_retries: int = 2, delay: float = 0.1) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """Decorator that retries database operations on connection errors.
+
+    Handles transient HTTP connection errors like "Server disconnected" by
+    resetting the connection and retrying.
+
+    Args:
+        max_retries: Maximum number of retry attempts (default 2)
+        delay: Delay in seconds between retries (default 0.1)
+    """
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs) -> T:
+            from .supabase_client import reset_supabase_client
+
+            last_error = None
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except (httpx.RemoteProtocolError, httpx.ConnectError) as e:
+                    last_error = e
+                    if attempt < max_retries:
+                        logger.warning(
+                            f"Connection error in {func.__name__}, retrying ({attempt + 1}/{max_retries}): {e}"
+                        )
+                        reset_supabase_client()
+                        time.sleep(delay)
+                    else:
+                        logger.error(f"Connection error in {func.__name__} after {max_retries} retries: {e}")
+                        raise
+            raise last_error  # Should never reach here, but for type safety
+        return wrapper
+    return decorator

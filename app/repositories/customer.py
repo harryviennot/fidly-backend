@@ -1,9 +1,10 @@
-from database.connection import get_db
+from database.connection import get_db, with_retry
 
 
 class CustomerRepository:
 
     @staticmethod
+    @with_retry()
     def create(business_id: str, name: str, email: str, auth_token: str) -> dict | None:
         """Create a new customer for a business."""
         db = get_db()
@@ -17,6 +18,7 @@ class CustomerRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_by_id(customer_id: str) -> dict | None:
         """Get a customer by ID."""
         db = get_db()
@@ -24,6 +26,7 @@ class CustomerRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_by_email(business_id: str, email: str) -> dict | None:
         """Get a customer by email within a business."""
         db = get_db()
@@ -33,6 +36,7 @@ class CustomerRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_by_auth_token(serial_number: str, auth_token: str) -> dict | None:
         """Verify auth token matches customer."""
         db = get_db()
@@ -42,6 +46,7 @@ class CustomerRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_all(business_id: str) -> list[dict]:
         """Get all customers for a business ordered by creation date."""
         db = get_db()
@@ -51,6 +56,7 @@ class CustomerRepository:
         return result.data if result and result.data else []
 
     @staticmethod
+    @with_retry()
     def add_stamp(customer_id: str, max_stamps: int = 10) -> int:
         """Add a stamp to a customer. Returns the new stamp count."""
         db = get_db()
@@ -70,6 +76,7 @@ class CustomerRepository:
         return new_stamps
 
     @staticmethod
+    @with_retry()
     def reset_stamps(customer_id: str) -> int:
         """Reset a customer's stamps to 0. Returns 0."""
         db = get_db()
@@ -79,6 +86,7 @@ class CustomerRepository:
         return 0
 
     @staticmethod
+    @with_retry()
     def update(customer_id: str, **kwargs) -> dict | None:
         """Update a customer."""
         db = get_db()
@@ -86,6 +94,7 @@ class CustomerRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def delete(customer_id: str) -> bool:
         """Delete a customer."""
         db = get_db()

@@ -1,9 +1,10 @@
-from database.connection import get_db
+from database.connection import get_db, with_retry
 
 
 class UserRepository:
 
     @staticmethod
+    @with_retry()
     def create(email: str, name: str, avatar_url: str | None = None) -> dict | None:
         """Create a new user."""
         db = get_db()
@@ -15,6 +16,7 @@ class UserRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_by_id(user_id: str) -> dict | None:
         """Get a user by ID."""
         db = get_db()
@@ -22,6 +24,7 @@ class UserRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_by_email(email: str) -> dict | None:
         """Get a user by email."""
         db = get_db()
@@ -29,6 +32,7 @@ class UserRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_by_auth_id(auth_id: str) -> dict | None:
         """Get a user by Supabase auth ID."""
         db = get_db()
@@ -36,6 +40,7 @@ class UserRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_all() -> list[dict]:
         """Get all users."""
         db = get_db()
@@ -43,6 +48,7 @@ class UserRepository:
         return result.data if result and result.data else []
 
     @staticmethod
+    @with_retry()
     def update(user_id: str, **kwargs) -> dict | None:
         """Update a user."""
         db = get_db()
@@ -50,6 +56,7 @@ class UserRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def delete(user_id: str) -> bool:
         """Delete a user."""
         db = get_db()

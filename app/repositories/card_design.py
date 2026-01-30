@@ -1,9 +1,10 @@
-from database.connection import get_db
+from database.connection import get_db, with_retry
 
 
 class CardDesignRepository:
 
     @staticmethod
+    @with_retry()
     def create(
         business_id: str,
         name: str,
@@ -43,6 +44,7 @@ class CardDesignRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_by_id(design_id: str) -> dict | None:
         """Get a card design by ID."""
         db = get_db()
@@ -50,6 +52,7 @@ class CardDesignRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_active(business_id: str) -> dict | None:
         """Get the active card design for a business."""
         db = get_db()
@@ -59,6 +62,7 @@ class CardDesignRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_all(business_id: str) -> list[dict]:
         """Get all card designs for a business ordered by creation date."""
         db = get_db()
@@ -68,6 +72,7 @@ class CardDesignRepository:
         return result.data if result and result.data else []
 
     @staticmethod
+    @with_retry()
     def update(design_id: str, **kwargs) -> dict | None:
         """Update a card design. Only updates provided fields."""
         if not kwargs:
@@ -78,6 +83,7 @@ class CardDesignRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def delete(design_id: str) -> bool:
         """Delete a card design. Returns True if deleted."""
         db = get_db()
@@ -85,6 +91,7 @@ class CardDesignRepository:
         return bool(result and result.data and len(result.data) > 0)
 
     @staticmethod
+    @with_retry()
     def set_active(business_id: str, design_id: str) -> dict | None:
         """Set a design as active, deactivating all others for this business."""
         db = get_db()

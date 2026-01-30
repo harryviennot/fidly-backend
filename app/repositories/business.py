@@ -1,9 +1,10 @@
-from database.connection import get_db
+from database.connection import get_db, with_retry
 
 
 class BusinessRepository:
 
     @staticmethod
+    @with_retry()
     def create(
         name: str,
         url_slug: str,
@@ -25,6 +26,7 @@ class BusinessRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_by_id(business_id: str) -> dict | None:
         """Get a business by ID."""
         db = get_db()
@@ -32,6 +34,7 @@ class BusinessRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_by_slug(url_slug: str) -> dict | None:
         """Get a business by URL slug."""
         db = get_db()
@@ -39,6 +42,7 @@ class BusinessRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_all() -> list[dict]:
         """Get all businesses."""
         db = get_db()
@@ -46,6 +50,7 @@ class BusinessRepository:
         return result.data if result and result.data else []
 
     @staticmethod
+    @with_retry()
     def update(business_id: str, **kwargs) -> dict | None:
         """Update a business."""
         db = get_db()
@@ -53,6 +58,7 @@ class BusinessRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def delete(business_id: str) -> bool:
         """Delete a business."""
         db = get_db()

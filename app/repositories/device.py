@@ -1,9 +1,10 @@
-from database.connection import get_db
+from database.connection import get_db, with_retry
 
 
 class DeviceRepository:
 
     @staticmethod
+    @with_retry()
     def register(customer_id: str, device_library_id: str, push_token: str):
         """Register a device for push notifications."""
         db = get_db()
@@ -14,6 +15,7 @@ class DeviceRepository:
         }, on_conflict="customer_id,device_library_id").execute()
 
     @staticmethod
+    @with_retry()
     def unregister(customer_id: str, device_library_id: str):
         """Unregister a device from push notifications."""
         db = get_db()
@@ -22,6 +24,7 @@ class DeviceRepository:
         ).eq("device_library_id", device_library_id).execute()
 
     @staticmethod
+    @with_retry()
     def get_push_tokens(customer_id: str) -> list[str]:
         """Get all push tokens for a customer."""
         db = get_db()
@@ -31,6 +34,7 @@ class DeviceRepository:
         return [row["push_token"] for row in result.data]
 
     @staticmethod
+    @with_retry()
     def get_serial_numbers_for_device(device_library_id: str) -> list[str]:
         """Get all serial numbers registered to a device."""
         db = get_db()
@@ -40,6 +44,7 @@ class DeviceRepository:
         return [row["customer_id"] for row in result.data]
 
     @staticmethod
+    @with_retry()
     def get_all_for_business(business_id: str) -> list[dict]:
         """Get all push registrations for a business (via customers)."""
         db = get_db()

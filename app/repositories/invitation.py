@@ -1,13 +1,14 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from database.connection import get_db
+from database.connection import get_db, with_retry
 
 
 class InvitationRepository:
     """Repository for managing team invitations."""
 
     @staticmethod
+    @with_retry()
     def create(
         business_id: str,
         email: str,
@@ -34,6 +35,7 @@ class InvitationRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_by_token(token: str) -> dict | None:
         """Get an invitation by token, including business and inviter details."""
         db = get_db()
@@ -43,6 +45,7 @@ class InvitationRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_by_id(invitation_id: str) -> dict | None:
         """Get an invitation by ID."""
         db = get_db()
@@ -50,6 +53,7 @@ class InvitationRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_pending_for_business(business_id: str) -> list[dict]:
         """Get all pending invitations for a business."""
         db = get_db()
@@ -61,6 +65,7 @@ class InvitationRepository:
         return result.data if result and result.data else []
 
     @staticmethod
+    @with_retry()
     def get_pending_by_email(email: str, business_id: str) -> dict | None:
         """Check if a pending invitation exists for this email and business."""
         db = get_db()
@@ -72,6 +77,7 @@ class InvitationRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def mark_accepted(invitation_id: str) -> dict | None:
         """Mark an invitation as accepted."""
         db = get_db()
@@ -82,6 +88,7 @@ class InvitationRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def mark_cancelled(invitation_id: str) -> dict | None:
         """Mark an invitation as cancelled."""
         db = get_db()
@@ -91,6 +98,7 @@ class InvitationRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def delete(invitation_id: str) -> bool:
         """Delete an invitation."""
         db = get_db()

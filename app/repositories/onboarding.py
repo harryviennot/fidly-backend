@@ -1,4 +1,4 @@
-from database.connection import get_db
+from database.connection import get_db, with_retry
 
 
 class OnboardingRepository:
@@ -21,6 +21,7 @@ class OnboardingRepository:
     """
 
     @staticmethod
+    @with_retry()
     def upsert(user_id: str, **kwargs) -> dict | None:
         """Create or update onboarding progress for a user."""
         db = get_db()
@@ -44,6 +45,7 @@ class OnboardingRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def get_by_user_id(user_id: str) -> dict | None:
         """Get onboarding progress for a user."""
         db = get_db()
@@ -51,6 +53,7 @@ class OnboardingRepository:
         return result.data[0] if result and result.data else None
 
     @staticmethod
+    @with_retry()
     def delete(user_id: str) -> bool:
         """Delete onboarding progress for a user (after they complete onboarding)."""
         db = get_db()
