@@ -56,6 +56,8 @@ def _design_to_response(design: dict) -> CardDesignResponse:
         stamp_filled_color=design["stamp_filled_color"],
         stamp_empty_color=design["stamp_empty_color"],
         stamp_border_color=design["stamp_border_color"],
+        stamp_icon=design.get("stamp_icon", "checkmark"),
+        reward_icon=design.get("reward_icon", "gift"),
         logo_url=logo_url,
         custom_filled_stamp_url=filled_stamp_url,
         custom_empty_stamp_url=empty_stamp_url,
@@ -110,6 +112,16 @@ def create_design(
     ctx: BusinessAccessContext = Depends(require_owner_access)
 ):
     """Create a new card design for a business (requires owner role)."""
+    # Check plan-based limit: base plan (pay) can only have 1 design
+    business = BusinessRepository.get_by_id(ctx.business_id)
+    if business and business.get("subscription_tier") == "pay":
+        existing_designs = CardDesignRepository.get_all(ctx.business_id)
+        if len(existing_designs) >= 1:
+            raise HTTPException(
+                status_code=403,
+                detail="Upgrade to Pro to create multiple card designs"
+            )
+
     # Convert PassField objects to dicts for storage
     secondary_fields = [f.model_dump() for f in data.secondary_fields]
     auxiliary_fields = [f.model_dump() for f in data.auxiliary_fields]
@@ -128,6 +140,8 @@ def create_design(
         stamp_filled_color=data.stamp_filled_color,
         stamp_empty_color=data.stamp_empty_color,
         stamp_border_color=data.stamp_border_color,
+        stamp_icon=data.stamp_icon,
+        reward_icon=data.reward_icon,
         secondary_fields=secondary_fields,
         auxiliary_fields=auxiliary_fields,
         back_fields=back_fields,

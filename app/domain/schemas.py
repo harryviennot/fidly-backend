@@ -156,6 +156,8 @@ class CardDesignCreate(BaseModel):
     stamp_filled_color: str = "rgb(255, 215, 0)"
     stamp_empty_color: str = "rgb(80, 50, 20)"
     stamp_border_color: str = "rgb(255, 255, 255)"
+    stamp_icon: str = "checkmark"  # Icon type for regular stamps
+    reward_icon: str = "gift"  # Icon type for the final reward stamp
 
     # Pass fields
     secondary_fields: list[PassField] = []
@@ -180,6 +182,8 @@ class CardDesignUpdate(BaseModel):
     stamp_filled_color: Optional[str] = None
     stamp_empty_color: Optional[str] = None
     stamp_border_color: Optional[str] = None
+    stamp_icon: Optional[str] = None
+    reward_icon: Optional[str] = None
 
     # Pass fields
     secondary_fields: Optional[list[PassField]] = None
@@ -207,6 +211,8 @@ class CardDesignResponse(BaseModel):
     stamp_filled_color: str
     stamp_empty_color: str
     stamp_border_color: str
+    stamp_icon: str = "checkmark"
+    reward_icon: str = "gift"
 
     # Asset URLs (populated by API)
     logo_url: Optional[str] = None

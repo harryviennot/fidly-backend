@@ -5,6 +5,8 @@ from fastapi import APIRouter, HTTPException, Depends, File, UploadFile
 from app.domain.schemas import BusinessCreate, BusinessUpdate, BusinessResponse
 from app.repositories.business import BusinessRepository
 from app.repositories.membership import MembershipRepository
+from app.repositories.onboarding import OnboardingRepository
+from app.repositories.card_design import CardDesignRepository
 from app.core.permissions import (
     get_current_user_profile,
     require_any_access,
@@ -12,6 +14,7 @@ from app.core.permissions import (
     BusinessAccessContext,
 )
 from app.services.storage import get_storage_service
+from app.services.onboarding_mapper import map_onboarding_to_card_design
 
 router = APIRouter()
 
@@ -63,6 +66,30 @@ def create_business(
         if new_logo_url:
             BusinessRepository.update(business["id"], logo_url=new_logo_url)
             business["logo_url"] = new_logo_url
+
+    # Auto-create card design from onboarding data
+    # Note: onboarding_progress.user_id references users.id, not auth_id
+    onboarding = OnboardingRepository.get_by_user_id(user["id"])
+    if onboarding:
+        card_design_data = onboarding.get("card_design")
+        category = onboarding.get("category")
+
+        # Map onboarding data to card design format
+        design_payload = map_onboarding_to_card_design(
+            card_design_data=card_design_data,
+            business_name=data.name,
+            category=category,
+        )
+
+        # Create the card design
+        design = CardDesignRepository.create(
+            business_id=business["id"],
+            **design_payload
+        )
+
+        # Set as active if created successfully
+        if design:
+            CardDesignRepository.set_active(business["id"], design["id"])
 
     return BusinessResponse(**business)
 
