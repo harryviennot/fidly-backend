@@ -13,6 +13,7 @@ class StorageService:
 
     ONBOARDING_BUCKET = "onboarding"
     BUSINESSES_BUCKET = "businesses"
+    PROFILES_BUCKET = "profiles"
 
     def __init__(self):
         self.supabase = get_supabase_client()
@@ -196,6 +197,48 @@ class StorageService:
             return self.upload_business_logo(business_id, file_data)
         except Exception:
             return None
+
+
+    def upload_profile_picture(
+        self, user_id: str, file_data: bytes, content_type: str = "image/png"
+    ) -> str:
+        """
+        Upload a profile picture for a user.
+
+        Args:
+            user_id: The user's ID
+            file_data: The image data
+            content_type: The MIME type of the file
+
+        Returns:
+            The public URL of the uploaded profile picture
+        """
+        ext = "png" if content_type == "image/png" else "jpg"
+        path = f"{user_id}/avatar.{ext}"
+        return self.upload_file(
+            bucket=self.PROFILES_BUCKET,
+            path=path,
+            file_data=file_data,
+            content_type=content_type,
+        )
+
+    def delete_profile_picture(self, user_id: str) -> bool:
+        """
+        Delete a user's profile picture (tries both extensions).
+
+        Args:
+            user_id: The user's ID
+
+        Returns:
+            True if deletion was successful
+        """
+        deleted_png = self.delete_file(
+            bucket=self.PROFILES_BUCKET, path=f"{user_id}/avatar.png"
+        )
+        deleted_jpg = self.delete_file(
+            bucket=self.PROFILES_BUCKET, path=f"{user_id}/avatar.jpg"
+        )
+        return deleted_png or deleted_jpg
 
 
 # Singleton instance
