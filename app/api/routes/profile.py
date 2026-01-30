@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, File, UploadFile
 
-from app.domain.schemas import UserResponse
+from app.domain.schemas import UserResponse, UserUpdate
 from app.repositories.user import UserRepository
 from app.core.permissions import get_current_user_profile
 from app.services.storage import get_storage_service
@@ -12,6 +12,22 @@ router = APIRouter()
 def get_my_profile(user: dict = Depends(get_current_user_profile)):
     """Get the current user's profile."""
     return UserResponse(**user)
+
+
+@router.put("/me", response_model=UserResponse)
+def update_my_profile(
+    data: UserUpdate,
+    user: dict = Depends(get_current_user_profile),
+):
+    """Update the current user's profile."""
+    update_data = data.model_dump(exclude_unset=True)
+    if not update_data:
+        return UserResponse(**user)
+
+    updated_user = UserRepository.update(user["id"], **update_data)
+    if not updated_user:
+        raise HTTPException(status_code=500, detail="Failed to update profile")
+    return UserResponse(**updated_user)
 
 
 @router.post("/avatar")
