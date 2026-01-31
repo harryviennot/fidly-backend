@@ -218,6 +218,7 @@ class CardDesignResponse(BaseModel):
     logo_url: Optional[str] = None
     custom_filled_stamp_url: Optional[str] = None
     custom_empty_stamp_url: Optional[str] = None
+    strip_background_url: Optional[str] = None
 
     # Pass fields
     secondary_fields: list[PassField] = []

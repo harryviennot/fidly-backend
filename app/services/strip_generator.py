@@ -43,9 +43,17 @@ class StripConfig:
     text_color: tuple[int, int, int] = (255, 255, 255)
     font_size: int = 32
 
-    # Custom stamp icons (optional filenames in stamps/ directory)
+    # Custom stamp icons (optional filenames in stamps/ directory - legacy)
     custom_filled_icon: Optional[str] = None
     custom_empty_icon: Optional[str] = None
+
+    # Custom background image path (legacy - for local files)
+    background_image_path: Optional[str] = None
+
+    # Image data (bytes) - preferred over paths for Supabase storage
+    custom_filled_icon_data: Optional[bytes] = None
+    custom_empty_icon_data: Optional[bytes] = None
+    background_image_data: Optional[bytes] = None
 
 
 class StripImageGenerator:
@@ -64,6 +72,24 @@ class StripImageGenerator:
 
     def _load_custom_icons(self) -> None:
         """Load custom stamp icons if configured."""
+        # First try loading from bytes data (Supabase storage)
+        if self.config.custom_filled_icon_data:
+            try:
+                self._custom_filled = Image.open(
+                    io.BytesIO(self.config.custom_filled_icon_data)
+                ).convert("RGBA")
+            except Exception:
+                pass
+
+        if self.config.custom_empty_icon_data:
+            try:
+                self._custom_empty = Image.open(
+                    io.BytesIO(self.config.custom_empty_icon_data)
+                ).convert("RGBA")
+            except Exception:
+                pass
+
+        # Fall back to file paths (legacy local storage)
         if not self.assets_dir:
             return
 
@@ -71,18 +97,57 @@ class StripImageGenerator:
         if not stamps_dir.exists():
             return
 
-        if self.config.custom_filled_icon:
+        if self.config.custom_filled_icon and not self._custom_filled:
             icon_path = stamps_dir / self.config.custom_filled_icon
             if icon_path.exists():
                 self._custom_filled = Image.open(icon_path).convert("RGBA")
 
-        if self.config.custom_empty_icon:
+        if self.config.custom_empty_icon and not self._custom_empty:
             icon_path = stamps_dir / self.config.custom_empty_icon
             if icon_path.exists():
                 self._custom_empty = Image.open(icon_path).convert("RGBA")
 
+    def _resize_and_crop_background(
+        self, bg_img: Image.Image, width: int, height: int
+    ) -> Image.Image:
+        """Resize background image to cover dimensions and center crop."""
+        bg_ratio = bg_img.width / bg_img.height
+        target_ratio = width / height
+        if bg_ratio > target_ratio:
+            # Image is wider - fit height, crop width
+            new_height = height
+            new_width = int(height * bg_ratio)
+        else:
+            # Image is taller - fit width, crop height
+            new_width = width
+            new_height = int(width / bg_ratio)
+        bg_img = bg_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        # Center crop to target dimensions
+        left = (new_width - width) // 2
+        top = (new_height - height) // 2
+        return bg_img.crop((left, top, left + width, top + height))
+
     def _create_background(self, width: int, height: int) -> Image.Image:
-        """Create the background with optional gradient."""
+        """Create the background with optional custom image or gradient."""
+        # First try loading from bytes data (Supabase storage)
+        if self.config.background_image_data:
+            try:
+                bg_img = Image.open(
+                    io.BytesIO(self.config.background_image_data)
+                ).convert("RGB")
+                return self._resize_and_crop_background(bg_img, width, height)
+            except Exception:
+                pass  # Fall through to other options
+
+        # Fall back to file path (legacy local storage)
+        if self.config.background_image_path:
+            try:
+                bg_img = Image.open(self.config.background_image_path).convert("RGB")
+                return self._resize_and_crop_background(bg_img, width, height)
+            except Exception:
+                pass  # Fall through to solid color on error
+
+        # Default: solid color background
         img = Image.new("RGB", (width, height), self.config.background_color)
 
         if self.config.background_gradient_end:

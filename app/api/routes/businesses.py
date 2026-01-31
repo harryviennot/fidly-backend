@@ -81,15 +81,11 @@ def create_business(
             category=category,
         )
 
-        # Create the card design
-        design = CardDesignRepository.create(
+        # Create the card design (not active - user will activate manually)
+        CardDesignRepository.create(
             business_id=business["id"],
             **design_payload
         )
-
-        # Set as active if created successfully
-        if design:
-            CardDesignRepository.set_active(business["id"], design["id"])
 
     return BusinessResponse(**business)
 

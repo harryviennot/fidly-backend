@@ -240,6 +240,92 @@ class StorageService:
         )
         return deleted_png or deleted_jpg
 
+    # ============================================
+    # Card Design Assets
+    # ============================================
+    # Path structure: {business_id}/cards/{card_id}/{filename}
+
+    def upload_card_logo(
+        self, business_id: str, card_id: str, file_data: bytes
+    ) -> str:
+        """
+        Upload a logo image for a card design.
+
+        Args:
+            business_id: The business's ID
+            card_id: The card design's ID
+            file_data: The PNG image data
+
+        Returns:
+            The public URL of the uploaded logo
+        """
+        path = f"{business_id}/cards/{card_id}/logo.png"
+        return self.upload_file(
+            bucket=self.BUSINESSES_BUCKET,
+            path=path,
+            file_data=file_data,
+            content_type="image/png",
+        )
+
+    def upload_card_strip_background(
+        self, business_id: str, card_id: str, file_data: bytes
+    ) -> str:
+        """
+        Upload a strip background image for a card design.
+
+        Args:
+            business_id: The business's ID
+            card_id: The card design's ID
+            file_data: The PNG image data
+
+        Returns:
+            The public URL of the uploaded strip background
+        """
+        path = f"{business_id}/cards/{card_id}/strip_bg.png"
+        return self.upload_file(
+            bucket=self.BUSINESSES_BUCKET,
+            path=path,
+            file_data=file_data,
+            content_type="image/png",
+        )
+
+    def delete_card_assets(self, business_id: str, card_id: str) -> bool:
+        """
+        Delete all assets for a card design.
+
+        Args:
+            business_id: The business's ID
+            card_id: The card design's ID
+
+        Returns:
+            True if any deletion was successful
+        """
+        deleted_logo = self.delete_file(
+            bucket=self.BUSINESSES_BUCKET,
+            path=f"{business_id}/cards/{card_id}/logo.png",
+        )
+        deleted_strip = self.delete_file(
+            bucket=self.BUSINESSES_BUCKET,
+            path=f"{business_id}/cards/{card_id}/strip_bg.png",
+        )
+        return deleted_logo or deleted_strip
+
+    def download_card_strip_background(
+        self, business_id: str, card_id: str
+    ) -> bytes | None:
+        """
+        Download a card's strip background image.
+
+        Args:
+            business_id: The business's ID
+            card_id: The card design's ID
+
+        Returns:
+            The file content as bytes, or None if download failed
+        """
+        path = f"{business_id}/cards/{card_id}/strip_bg.png"
+        return self.download_file(self.BUSINESSES_BUCKET, path)
+
 
 # Singleton instance
 _storage_service: Optional[StorageService] = None

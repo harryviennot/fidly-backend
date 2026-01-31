@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS card_designs (
     logo_path TEXT,
     custom_filled_stamp_path TEXT,
     custom_empty_stamp_path TEXT,
+    strip_background_path TEXT,
 
     -- Pass Fields (JSON arrays of {key, label, value})
     secondary_fields TEXT DEFAULT '[]',
