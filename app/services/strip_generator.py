@@ -75,7 +75,8 @@ class StripConfig:
 
     # Layout
     total_stamps: int = 10  # 1-24 stamps supported
-    min_padding: int = 16  # Minimum padding between stamps and edges
+    min_padding: int = 24  # Minimum padding between stamps
+    side_padding: int = 32  # Minimum padding on left/right edges
 
     # Text
     show_progress_text: bool = True
@@ -145,7 +146,8 @@ def calculate_circle_layout(
     count: int,
     canvas_width: int = 1125,
     canvas_height: int = 369,
-    min_padding: int = 16
+    min_padding: int = 24,
+    side_padding: int = 32
 ) -> CircleLayout:
     """
     Calculate circle positions for a given count on the canvas.
@@ -157,7 +159,8 @@ def calculate_circle_layout(
         count: Number of circles (1-24)
         canvas_width: Width of canvas in pixels
         canvas_height: Height of canvas in pixels
-        min_padding: Minimum padding in pixels (Apple Wallet style: 24)
+        min_padding: Minimum padding in pixels between circles
+        side_padding: Minimum padding on left/right edges
     
     Returns:
         CircleLayout object with all positioning information
@@ -186,9 +189,13 @@ def calculate_circle_layout(
     max_in_row = max(distribution)
     
     # Calculate circle diameter based on available space
-    # Width constraint: (max_in_row * diameter) + ((max_in_row + 1) * padding) <= canvas_width
-    # Height constraint: (rows * diameter) + ((rows + 1) * padding) <= canvas_height
-    max_diameter_by_width = (canvas_width - (max_in_row + 1) * min_padding) / max_in_row
+    # Account for side_padding on edges and min_padding between circles
+    # Width: side_padding + (max_in_row * diameter) + ((max_in_row - 1) * min_padding) + side_padding <= canvas_width
+    # Simplified: (max_in_row * diameter) + ((max_in_row - 1) * min_padding) <= canvas_width - 2 * side_padding
+    available_width = canvas_width - 2 * side_padding
+    max_diameter_by_width = (available_width - (max_in_row - 1) * min_padding) / max_in_row
+    
+    # Height: (rows * diameter) + ((rows + 1) * min_padding) <= canvas_height
     max_diameter_by_height = (canvas_height - (rows + 1) * min_padding) / rows
     
     # Use the smaller to ensure both constraints are met
@@ -207,18 +214,22 @@ def calculate_circle_layout(
     for row_index, circles_in_row in enumerate(distribution):
         if circles_in_row == 0:
             continue
-            
-        # Horizontal padding for this row (same between all circles and edges)
-        total_horizontal_space = canvas_width - (circles_in_row * diameter)
-        horizontal_padding = total_horizontal_space / (circles_in_row + 1)
-        horizontal_paddings.append(horizontal_padding)
+        
+        # Calculate total width of circles and gaps for this row
+        row_content_width = (circles_in_row * diameter) + ((circles_in_row - 1) * min_padding)
+        
+        # Center the row content, this gives us the effective side padding for this row
+        row_side_padding = (canvas_width - row_content_width) / 2
+        horizontal_paddings.append(row_side_padding)
         
         # Y position for this row (center of circle)
         y = vertical_padding * (row_index + 1) + diameter * row_index + radius
         
         for i in range(circles_in_row):
             # X position (center of circle)
-            x = horizontal_padding * (i + 1) + diameter * i + radius
+            # First circle starts at row_side_padding + radius
+            # Each subsequent circle is diameter + min_padding apart
+            x = row_side_padding + radius + i * (diameter + min_padding)
             circles.append(CirclePosition(
                 center_x=x,
                 center_y=y,
@@ -387,22 +398,21 @@ class StripImageGenerator:
         return img
 
     def _resize_cover(self, img: Image.Image, target_width: int, target_height: int) -> Image.Image:
-        """Resize image to cover target dimensions (like CSS background-size: cover)."""
-        img_ratio = img.width / img.height
-        target_ratio = target_width / target_height
-
-        if img_ratio > target_ratio:
-            # Image is wider, scale by height
+        """Resize image to cover target dimensions, prioritizing full width coverage."""
+        # Always scale to fill the full width
+        scale = target_width / img.width
+        new_width = target_width
+        new_height = int(img.height * scale)
+        
+        # If the scaled height is less than target, scale by height instead
+        if new_height < target_height:
+            scale = target_height / img.height
             new_height = target_height
-            new_width = int(target_height * img_ratio)
-        else:
-            # Image is taller, scale by width
-            new_width = target_width
-            new_height = int(target_width / img_ratio)
-
-        # Resize and crop to center
+            new_width = int(img.width * scale)
+        
+        # Resize
         img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
+        
         # Crop to target size (centered)
         left = (new_width - target_width) // 2
         top = (new_height - target_height) // 2
@@ -441,12 +451,19 @@ class StripImageGenerator:
         )
 
         # Draw the circle background
-        draw.ellipse(
-            [x - radius, y - radius, x + radius, y + radius],
-            fill=fill_color,
-            outline=self.config.stamp_border_color,
-            width=border_width,
-        )
+        # Filled stamps have no outline, empty stamps have outline
+        if filled:
+            draw.ellipse(
+                [x - radius, y - radius, x + radius, y + radius],
+                fill=fill_color,
+            )
+        else:
+            draw.ellipse(
+                [x - radius, y - radius, x + radius, y + radius],
+                fill=fill_color,
+                outline=self.config.stamp_border_color,
+                width=border_width,
+            )
 
         # Draw icon inside if filled
         if filled:
@@ -468,14 +485,6 @@ class StripImageGenerator:
                     img.paste(rgb_img)
                 else:
                     img.paste(icon_img, (paste_x, paste_y), icon_img)
-            else:
-                # Fallback: draw inner accent circle if no icon available
-                inner_radius = int(radius * 0.35)
-                accent_color = (50, 30, 10)  # Dark accent for contrast
-                draw.ellipse(
-                    [x - inner_radius, y - inner_radius, x + inner_radius, y + inner_radius],
-                    fill=accent_color,
-                )
 
     def _paste_custom_icon(
         self,
@@ -529,26 +538,41 @@ class StripImageGenerator:
         # Scale dimensions
         width = (self.config.width * scale) // 3
         height = (self.config.height * scale) // 3
-        stamp_area_height = (self.config.stamp_area_height * scale) // 3
         min_padding = (self.config.min_padding * scale) // 3
 
         # Clamp stamps to valid range
         stamps = max(0, min(stamps, self.config.total_stamps))
 
+        # Check if we have a custom background image
+        has_custom_background = (
+            self.config.strip_background_data is not None or
+            (self.config.strip_background_path is not None and 
+             Path(self.config.strip_background_path).exists())
+        )
+
         # Create background (full height)
         img = self._create_background(width, height)
         draw = ImageDraw.Draw(img)
 
-        # Calculate the vertical offset to center stamps in the stamp area
-        # The stamp area starts from the bottom of the image
-        stamp_area_offset = height - stamp_area_height
+        # Determine stamp area based on background
+        if has_custom_background:
+            # With custom background: 24px top and bottom padding
+            top_padding = (24 * scale) // 3
+            bottom_padding = (24 * scale) // 3
+            stamp_area_height = height - top_padding - bottom_padding
+            stamp_area_offset = top_padding
+        else:
+            # No custom background: use full height (padding invisible anyway)
+            stamp_area_height = height
+            stamp_area_offset = 0
 
         # Calculate circle layout for the stamp area
         layout = calculate_circle_layout(
             count=self.config.total_stamps,
             canvas_width=width,
             canvas_height=stamp_area_height,
-            min_padding=min_padding
+            min_padding=min_padding,
+            side_padding=(self.config.side_padding * scale) // 3
         )
 
         # Calculate border width proportional to radius
