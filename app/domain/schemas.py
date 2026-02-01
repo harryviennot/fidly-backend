@@ -176,7 +176,7 @@ class CardDesignCreate(BaseModel):
     # Icon configuration
     stamp_icon: str = "checkmark"
     reward_icon: str = "gift"
-    icon_color: str = "#ffffff"
+    icon_color: str = "rgb(255, 255, 255)"
 
     # Pass fields
     secondary_fields: list[PassField] = []
@@ -237,7 +237,7 @@ class CardDesignResponse(BaseModel):
     # Icon configuration
     stamp_icon: str = "checkmark"
     reward_icon: str = "gift"
-    icon_color: str = "#ffffff"
+    icon_color: str = "rgb(255, 255, 255)"
 
     # Asset URLs (populated by API)
     logo_url: Optional[str] = None

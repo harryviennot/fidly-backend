@@ -12,6 +12,7 @@ import httpx
 
 from app.services.strip_generator import StripImageGenerator, StripConfig
 
+white = "rgb(255, 255, 255)"
 
 def _download_from_url(url: str) -> bytes | None:
     """Download file content from a URL."""
@@ -98,7 +99,7 @@ class PassGenerator:
             # New predefined icon configuration
             stamp_icon=design.get("stamp_icon", "checkmark"),
             reward_icon=design.get("reward_icon", "gift"),
-            icon_color=_parse_rgb(design.get("icon_color", "#ffffff")),
+            icon_color=_parse_rgb(design.get("icon_color", white)),
             # Custom strip background as bytes
             strip_background_data=strip_background_data,
         )
@@ -112,9 +113,9 @@ class PassGenerator:
             org_name = design.get("organization_name", self.business_name)
             description = design.get("description", f"{org_name} Loyalty Card")
             logo_text = design.get("logo_text") or org_name
-            foreground_color = design.get("foreground_color", "rgb(255, 255, 255)")
+            foreground_color = design.get("foreground_color", white)
             background_color = design.get("background_color", "rgb(139, 90, 43)")
-            label_color = design.get("label_color", "rgb(255, 255, 255)")
+            label_color = design.get("label_color", white)
             total_stamps = design.get("total_stamps", 10)
             secondary_fields = design.get("secondary_fields", [])
             auxiliary_fields = design.get("auxiliary_fields", [])
@@ -123,9 +124,9 @@ class PassGenerator:
             org_name = self.business_name
             description = f"{self.business_name} Loyalty Card"
             logo_text = self.business_name
-            foreground_color = "rgb(255, 255, 255)"
+            foreground_color = white
             background_color = "rgb(139, 90, 43)"
-            label_color = "rgb(255, 255, 255)"
+            label_color = white
             total_stamps = 10
             secondary_fields = [
                 {"key": "reward", "label": "REWARD", "value": "Free Coffee at 10 stamps!"}

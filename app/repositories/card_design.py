@@ -20,7 +20,7 @@ class CardDesignRepository:
         stamp_border_color: str = "rgb(255, 255, 255)",
         stamp_icon: str = "checkmark",
         reward_icon: str = "gift",
-        icon_color: str = "#ffffff",
+        icon_color: str = "rgb(255, 255, 255)",
         secondary_fields: list | None = None,
         auxiliary_fields: list | None = None,
         back_fields: list | None = None,
