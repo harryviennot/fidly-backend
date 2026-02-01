@@ -18,6 +18,7 @@ from app.core.permissions import (
     require_owner_access,
     BusinessAccessContext,
 )
+from app.core.entitlements import require_can_create_design
 
 router = APIRouter()
 
@@ -94,9 +95,10 @@ def get_design(
 @router.post("/{business_id}", response_model=CardDesignResponse)
 def create_design(
     data: CardDesignCreate,
-    ctx: BusinessAccessContext = Depends(require_owner_access)
+    ctx: BusinessAccessContext = Depends(require_owner_access),
+    _entitlement: BusinessAccessContext = Depends(require_can_create_design)
 ):
-    """Create a new card design for a business (requires owner role)."""
+    """Create a new card design for a business (requires owner role and plan allowance)."""
     # Convert PassField objects to dicts for storage
     secondary_fields = [f.model_dump() for f in data.secondary_fields]
     auxiliary_fields = [f.model_dump() for f in data.auxiliary_fields]

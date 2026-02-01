@@ -98,6 +98,16 @@ class CardDesignRepository:
 
     @staticmethod
     @with_retry()
+    def count(business_id: str) -> int:
+        """Count all card designs for a business."""
+        db = get_db()
+        result = db.table("card_designs").select(
+            "id", count="exact"
+        ).eq("business_id", business_id).execute()
+        return result.count if result and result.count is not None else 0
+
+    @staticmethod
+    @with_retry()
     def set_active(business_id: str, design_id: str) -> dict | None:
         """Set a design as active, deactivating all others for this business."""
         db = get_db()
