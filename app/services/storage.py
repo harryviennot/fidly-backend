@@ -240,6 +240,53 @@ class StorageService:
         )
         return deleted_png or deleted_jpg
 
+    # Card design asset methods
+    def _card_asset_path(self, business_id: str, card_id: str, filename: str) -> str:
+        """Get the storage path for a card design asset."""
+        return f"{business_id}/cards/{card_id}/{filename}"
+
+    def upload_card_logo(self, business_id: str, card_id: str, file_data: bytes) -> str:
+        """Upload a logo for a card design."""
+        path = self._card_asset_path(business_id, card_id, "logo.png")
+        return self.upload_file(self.BUSINESSES_BUCKET, path, file_data, "image/png")
+
+    def upload_card_stamp(
+        self, business_id: str, card_id: str, stamp_type: str, file_data: bytes
+    ) -> str:
+        """Upload a custom stamp icon for a card design."""
+        filename = f"stamp_{stamp_type}.png"
+        path = self._card_asset_path(business_id, card_id, filename)
+        return self.upload_file(self.BUSINESSES_BUCKET, path, file_data, "image/png")
+
+    def upload_card_strip_background(
+        self, business_id: str, card_id: str, file_data: bytes
+    ) -> str:
+        """Upload a strip background for a card design."""
+        path = self._card_asset_path(business_id, card_id, "strip_background.png")
+        return self.upload_file(self.BUSINESSES_BUCKET, path, file_data, "image/png")
+
+    def download_card_asset(
+        self, business_id: str, card_id: str, filename: str
+    ) -> bytes | None:
+        """Download a card design asset."""
+        path = self._card_asset_path(business_id, card_id, filename)
+        return self.download_file(self.BUSINESSES_BUCKET, path)
+
+    def get_card_asset_url(self, business_id: str, card_id: str, filename: str) -> str:
+        """Get the public URL for a card design asset."""
+        path = self._card_asset_path(business_id, card_id, filename)
+        return self.get_public_url(self.BUSINESSES_BUCKET, path)
+
+    def delete_card_assets(self, business_id: str, card_id: str) -> bool:
+        """Delete all assets for a card design."""
+        files = ["logo.png", "stamp_filled.png", "stamp_empty.png", "strip_background.png"]
+        success = True
+        for filename in files:
+            path = self._card_asset_path(business_id, card_id, filename)
+            if not self.delete_file(self.BUSINESSES_BUCKET, path):
+                success = False
+        return success
+
 
 # Singleton instance
 _storage_service: Optional[StorageService] = None
