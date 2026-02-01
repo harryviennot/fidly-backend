@@ -29,6 +29,13 @@ certs/*.cer
 # Data
 data/
 
+# Uploaded files (keep directory structure)
+uploads/*
+!uploads/.gitkeep
+!uploads/designs/
+uploads/designs/*
+!uploads/designs/.gitkeep
+
 # IDE
 .idea/
 .vscode/

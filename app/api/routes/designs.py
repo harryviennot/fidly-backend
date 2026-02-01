@@ -1,6 +1,3 @@
-import shutil
-from pathlib import Path
-
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 
 from app.domain.schemas import (
@@ -14,8 +11,8 @@ from app.repositories.customer import CustomerRepository
 from app.repositories.device import DeviceRepository
 from app.repositories.business import BusinessRepository
 from app.services.apns import APNsClient
+from app.services.storage import get_storage_service
 from app.api.deps import get_apns_client
-from app.core.config import settings
 from app.core.permissions import (
     require_any_access,
     require_owner_access,
@@ -24,24 +21,9 @@ from app.core.permissions import (
 
 router = APIRouter()
 
-# Upload directory for design assets
-UPLOADS_DIR = Path(__file__).parent.parent.parent.parent / "uploads" / "designs"
-
 
 def _design_to_response(design: dict) -> CardDesignResponse:
     """Convert a design dict to a response with URLs."""
-    logo_url = None
-    if design.get("logo_path"):
-        logo_url = f"{settings.base_url}/designs/uploads/{design['id']}/{design['logo_path']}"
-
-    filled_stamp_url = None
-    if design.get("custom_filled_stamp_path"):
-        filled_stamp_url = f"{settings.base_url}/designs/uploads/{design['id']}/{design['custom_filled_stamp_path']}"
-
-    empty_stamp_url = None
-    if design.get("custom_empty_stamp_path"):
-        empty_stamp_url = f"{settings.base_url}/designs/uploads/{design['id']}/{design['custom_empty_stamp_path']}"
-
     return CardDesignResponse(
         id=design["id"],
         name=design["name"],
@@ -56,9 +38,14 @@ def _design_to_response(design: dict) -> CardDesignResponse:
         stamp_filled_color=design["stamp_filled_color"],
         stamp_empty_color=design["stamp_empty_color"],
         stamp_border_color=design["stamp_border_color"],
-        logo_url=logo_url,
-        custom_filled_stamp_url=filled_stamp_url,
-        custom_empty_stamp_url=empty_stamp_url,
+        stamp_icon=design.get("stamp_icon", "checkmark"),
+        reward_icon=design.get("reward_icon", "gift"),
+        icon_color=design.get("icon_color", "#ffffff"),
+        # URLs are stored in *_path columns (Supabase Storage URLs)
+        logo_url=design.get("logo_path"),
+        custom_filled_stamp_url=design.get("custom_filled_stamp_path"),
+        custom_empty_stamp_url=design.get("custom_empty_stamp_path"),
+        strip_background_url=design.get("strip_background_path"),
         secondary_fields=design.get("secondary_fields", []),
         auxiliary_fields=design.get("auxiliary_fields", []),
         back_fields=design.get("back_fields", []),
@@ -128,6 +115,9 @@ def create_design(
         stamp_filled_color=data.stamp_filled_color,
         stamp_empty_color=data.stamp_empty_color,
         stamp_border_color=data.stamp_border_color,
+        stamp_icon=data.stamp_icon,
+        reward_icon=data.reward_icon,
+        icon_color=data.icon_color,
         secondary_fields=secondary_fields,
         auxiliary_fields=auxiliary_fields,
         back_fields=back_fields,
@@ -140,10 +130,11 @@ def create_design(
 
 
 @router.put("/{business_id}/{design_id}", response_model=CardDesignResponse)
-def update_design(
+async def update_design(
     design_id: str,
     data: CardDesignUpdate,
-    ctx: BusinessAccessContext = Depends(require_owner_access)
+    ctx: BusinessAccessContext = Depends(require_owner_access),
+    apns_client: APNsClient = Depends(get_apns_client)
 ):
     """Update a card design (requires owner role)."""
     existing = CardDesignRepository.get_by_id(design_id)
@@ -169,6 +160,14 @@ def update_design(
     else:
         design = existing
 
+    # If this is the active design, send push notifications to all customers
+    if existing.get("is_active") and update_data:
+        customers = CustomerRepository.get_all(ctx.business_id)
+        for customer in customers:
+            push_tokens = DeviceRepository.get_push_tokens(customer["id"])
+            if push_tokens:
+                await apns_client.send_to_all_devices(push_tokens)
+
     return _design_to_response(design)
 
 
@@ -192,10 +191,9 @@ def delete_design(
             detail="Cannot delete the active design. Activate another design first."
         )
 
-    # Delete uploaded assets
-    design_uploads = UPLOADS_DIR / design_id
-    if design_uploads.exists():
-        shutil.rmtree(design_uploads)
+    # Delete uploaded assets from Supabase Storage
+    storage = get_storage_service()
+    storage.delete_card_assets(ctx.business_id, design_id)
 
     CardDesignRepository.delete(design_id)
     return {"message": "Design deleted"}
@@ -247,25 +245,19 @@ async def upload_logo(
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
-    # Create upload directory
-    design_uploads = UPLOADS_DIR / design_id
-    design_uploads.mkdir(parents=True, exist_ok=True)
+    # Upload to Supabase Storage
+    storage = get_storage_service()
+    content = await file.read()
+    url = storage.upload_card_logo(ctx.business_id, design_id, content)
 
-    # Save the file
-    filename = "logo.png"
-    filepath = design_uploads / filename
-    with open(filepath, "wb") as f:
-        content = await file.read()
-        f.write(content)
-
-    # Update design with logo path
-    CardDesignRepository.update(design_id, logo_path=filename)
+    # Update design with logo URL (stored in logo_path column)
+    CardDesignRepository.update(design_id, logo_path=url)
 
     return UploadResponse(
         id=design_id,
         asset_type="logo",
-        url=f"{settings.base_url}/designs/uploads/{design_id}/{filename}",
-        filename=filename,
+        url=url,
+        filename="logo.png",
     )
 
 
@@ -291,38 +283,54 @@ async def upload_stamp(
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
-    # Create upload directory
-    design_uploads = UPLOADS_DIR / design_id
-    design_uploads.mkdir(parents=True, exist_ok=True)
+    # Upload to Supabase Storage
+    storage = get_storage_service()
+    content = await file.read()
+    url = storage.upload_card_stamp(ctx.business_id, design_id, stamp_type, content)
 
-    # Save the file
-    filename = f"stamp_{stamp_type}.png"
-    filepath = design_uploads / filename
-    with open(filepath, "wb") as f:
-        content = await file.read()
-        f.write(content)
-
-    # Update design with stamp path
+    # Update design with stamp URL (stored in *_path columns)
     if stamp_type == "filled":
-        CardDesignRepository.update(design_id, custom_filled_stamp_path=filename)
+        CardDesignRepository.update(design_id, custom_filled_stamp_path=url)
     else:
-        CardDesignRepository.update(design_id, custom_empty_stamp_path=filename)
+        CardDesignRepository.update(design_id, custom_empty_stamp_path=url)
 
     return UploadResponse(
         id=design_id,
         asset_type=f"stamp_{stamp_type}",
-        url=f"{settings.base_url}/designs/uploads/{design_id}/{filename}",
-        filename=filename,
+        url=url,
+        filename=f"stamp_{stamp_type}.png",
     )
 
 
-@router.get("/uploads/{design_id}/{filename}")
-def serve_upload(design_id: str, filename: str):
-    """Serve an uploaded file."""
-    from fastapi.responses import FileResponse
+@router.post("/{business_id}/{design_id}/upload/strip-background", response_model=UploadResponse)
+async def upload_strip_background(
+    design_id: str,
+    file: UploadFile = File(...),
+    ctx: BusinessAccessContext = Depends(require_owner_access)
+):
+    """Upload a custom strip background image (requires owner role)."""
+    design = CardDesignRepository.get_by_id(design_id)
+    if not design:
+        raise HTTPException(status_code=404, detail="Design not found")
 
-    filepath = UPLOADS_DIR / design_id / filename
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail="File not found")
+    # Verify design belongs to the business
+    if design.get("business_id") != ctx.business_id:
+        raise HTTPException(status_code=404, detail="Design not found")
 
-    return FileResponse(filepath)
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    # Upload to Supabase Storage
+    storage = get_storage_service()
+    content = await file.read()
+    url = storage.upload_card_strip_background(ctx.business_id, design_id, content)
+
+    # Update design with strip background URL (stored in strip_background_path column)
+    CardDesignRepository.update(design_id, strip_background_path=url)
+
+    return UploadResponse(
+        id=design_id,
+        asset_type="strip_background",
+        url=url,
+        filename="strip_background.png",
+    )

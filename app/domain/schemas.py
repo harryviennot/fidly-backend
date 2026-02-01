@@ -114,6 +114,22 @@ class StampResponse(BaseModel):
     message: str
 
 
+# Public customer registration (no auth required)
+class CustomerPublicCreate(BaseModel):
+    """Request body for public customer registration."""
+    name: Optional[str] = None  # Required if business.settings.collect_name is true
+    email: Optional[EmailStr] = None  # Required if business.settings.collect_email is true
+    phone: Optional[str] = None  # Required if business.settings.collect_phone is true
+
+
+class CustomerPublicResponse(BaseModel):
+    """Response body for public customer registration."""
+    status: str  # "created" | "exists_email_sent"
+    customer_id: Optional[str] = None  # Only for "created"
+    pass_url: Optional[str] = None  # Only for "created"
+    message: str  # User-friendly message
+
+
 class DeviceRegistration(BaseModel):
     pushToken: str
 
@@ -157,6 +173,11 @@ class CardDesignCreate(BaseModel):
     stamp_empty_color: str = "rgb(80, 50, 20)"
     stamp_border_color: str = "rgb(255, 255, 255)"
 
+    # Icon configuration
+    stamp_icon: str = "checkmark"
+    reward_icon: str = "gift"
+    icon_color: str = "#ffffff"
+
     # Pass fields
     secondary_fields: list[PassField] = []
     auxiliary_fields: list[PassField] = []
@@ -180,6 +201,11 @@ class CardDesignUpdate(BaseModel):
     stamp_filled_color: Optional[str] = None
     stamp_empty_color: Optional[str] = None
     stamp_border_color: Optional[str] = None
+
+    # Icon configuration
+    stamp_icon: Optional[str] = None
+    reward_icon: Optional[str] = None
+    icon_color: Optional[str] = None
 
     # Pass fields
     secondary_fields: Optional[list[PassField]] = None
@@ -208,10 +234,16 @@ class CardDesignResponse(BaseModel):
     stamp_empty_color: str
     stamp_border_color: str
 
+    # Icon configuration
+    stamp_icon: str = "checkmark"
+    reward_icon: str = "gift"
+    icon_color: str = "#ffffff"
+
     # Asset URLs (populated by API)
     logo_url: Optional[str] = None
     custom_filled_stamp_url: Optional[str] = None
     custom_empty_stamp_url: Optional[str] = None
+    strip_background_url: Optional[str] = None
 
     # Pass fields
     secondary_fields: list[PassField] = []

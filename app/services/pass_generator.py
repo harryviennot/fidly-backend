@@ -8,7 +8,21 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
+import httpx
+
 from app.services.strip_generator import StripImageGenerator, StripConfig
+
+
+def _download_from_url(url: str) -> bytes | None:
+    """Download file content from a URL."""
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(url)
+            if response.status_code == 200:
+                return response.content
+    except Exception:
+        pass
+    return None
 
 
 class PassGenerator:
@@ -43,9 +57,6 @@ class PassGenerator:
         # Pass assets directory (relative to project root)
         self.assets_dir = Path(__file__).parent.parent.parent / "pass_assets"
 
-        # Uploads directory for custom design assets
-        self.uploads_dir = Path(__file__).parent.parent.parent / "uploads" / "designs"
-
         # Build strip config from design if available
         if design:
             strip_config = self._build_strip_config_from_design(design)
@@ -58,28 +69,38 @@ class PassGenerator:
 
     def _build_strip_config_from_design(self, design: dict) -> StripConfig:
         """Build StripConfig from a design dictionary."""
-        # Get custom stamp icon paths if they exist
-        custom_filled = None
-        custom_empty = None
+        # Download custom stamp icons from Supabase Storage URLs if they exist
+        custom_filled_data = None
+        custom_empty_data = None
+        strip_background_data = None
 
         if design.get("custom_filled_stamp_path"):
-            filled_path = self.uploads_dir / design["id"] / design["custom_filled_stamp_path"]
-            if filled_path.exists():
-                custom_filled = str(filled_path)
+            custom_filled_data = _download_from_url(design["custom_filled_stamp_path"])
 
         if design.get("custom_empty_stamp_path"):
-            empty_path = self.uploads_dir / design["id"] / design["custom_empty_stamp_path"]
-            if empty_path.exists():
-                custom_empty = str(empty_path)
+            custom_empty_data = _download_from_url(design["custom_empty_stamp_path"])
+
+        if design.get("strip_background_path"):
+            strip_background_data = _download_from_url(design["strip_background_path"])
+
+        # Get stamp filled color - support both stamp_filled_color and accent_color (from onboarding)
+        stamp_filled_color = design.get("stamp_filled_color") or design.get("accent_color")
 
         return StripConfig(
             background_color=_parse_rgb(design.get("background_color")),
-            stamp_filled_color=_parse_rgb(design.get("stamp_filled_color")),
+            stamp_filled_color=_parse_rgb(stamp_filled_color),
             stamp_empty_color=_parse_rgb(design.get("stamp_empty_color")),
             stamp_border_color=_parse_rgb(design.get("stamp_border_color")),
             total_stamps=design.get("total_stamps", 10),
-            custom_filled_icon=custom_filled,
-            custom_empty_icon=custom_empty,
+            # Custom icons as bytes (downloaded from Supabase Storage)
+            custom_filled_icon_data=custom_filled_data,
+            custom_empty_icon_data=custom_empty_data,
+            # New predefined icon configuration
+            stamp_icon=design.get("stamp_icon", "checkmark"),
+            reward_icon=design.get("reward_icon", "gift"),
+            icon_color=_parse_rgb(design.get("icon_color", "#ffffff")),
+            # Custom strip background as bytes
+            strip_background_data=strip_background_data,
         )
 
     def _create_pass_json(self, customer_id: str, name: str, stamps: int, auth_token: str) -> dict:
@@ -219,15 +240,13 @@ class PassGenerator:
                 with open(filepath, "rb") as f:
                     files[filename] = f.read()
 
-        # Load logo - check for custom design logo first
+        # Load logo - check for custom design logo URL first (from Supabase Storage)
         logo_loaded = False
         if self.design and self.design.get("logo_path"):
-            custom_logo = self.uploads_dir / self.design["id"] / self.design["logo_path"]
-            if custom_logo.exists():
-                with open(custom_logo, "rb") as f:
-                    files["logo.png"] = f.read()
-                    # Also use as logo@2x if we only have one
-                    files["logo@2x.png"] = files["logo.png"]
+            logo_data = _download_from_url(self.design["logo_path"])
+            if logo_data:
+                files["logo.png"] = logo_data
+                files["logo@2x.png"] = logo_data
                 logo_loaded = True
 
         # Fall back to default logo files
