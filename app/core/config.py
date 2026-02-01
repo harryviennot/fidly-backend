@@ -5,6 +5,12 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    # Supabase
+    supabase_url: str = ""
+    supabase_publishable_key: str = ""
+    supabase_secret_key: str = ""
+    supabase_jwt_secret: str = ""  # JWT secret for HS256 token verification
+
     # Apple Developer
     apple_team_id: str = ""
     apple_pass_type_id: str = ""
@@ -17,7 +23,6 @@ class Settings(BaseSettings):
 
     # Server
     base_url: str = "http://localhost:8000"
-    database_path: str = "loyalty.db"
 
     # Business
     business_name: str = "Coffee Shop"
@@ -36,6 +41,10 @@ class Settings(BaseSettings):
 
     # ngrok
     ngrok_api_url: str | None = None
+
+    # Email (Resend)
+    resend_api_key: str = ""
+    web_app_url: str = "http://localhost:3000"
 
     class Config:
         env_file = ".env"
