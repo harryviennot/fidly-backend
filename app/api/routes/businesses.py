@@ -115,6 +115,25 @@ def get_business(ctx: BusinessAccessContext = Depends(require_any_access)):
     return BusinessResponse(**business)
 
 
+@router.get("/{business_id}/signup-qr")
+def get_signup_qr_code(ctx: BusinessAccessContext = Depends(require_any_access)):
+    """Get QR code for customer signup page."""
+    from app.services.qr_generator import generate_qr_code_base64
+    from app.core.config import settings
+
+    business = BusinessRepository.get_by_id(ctx.business_id)
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    signup_url = f"{settings.showcase_url}/{business['url_slug']}"
+
+    return {
+        "qr_code": generate_qr_code_base64(signup_url),
+        "signup_url": signup_url,
+        "business_name": business["name"],
+    }
+
+
 @router.put("/{business_id}", response_model=BusinessResponse)
 def update_business(
     data: BusinessUpdate,

@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     web_app_url: str = "http://localhost:3000"
 
+    # Showcase (customer-facing landing pages)
+    showcase_url: str = "http://localhost:3001"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
