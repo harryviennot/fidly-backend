@@ -26,7 +26,7 @@ def get_current_user_profile(auth_payload: dict = Depends(require_auth)) -> dict
             detail="Invalid token payload: missing sub claim"
         )
 
-    user = UserRepository.get_by_auth_id(auth_id)
+    user = UserRepository.get_by_id(auth_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

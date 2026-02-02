@@ -66,3 +66,56 @@ async def add_customer_stamp(
         stamps=new_stamps,
         message=message,
     )
+
+
+@router.post("/{customer_id}/redeem", response_model=StampResponse)
+async def redeem_customer_reward(
+    customer_id: str,
+    apns_client: APNsClient = Depends(get_apns_client),
+    x_scanner_user_id: Optional[str] = Header(None, alias="X-Scanner-User-Id"),
+):
+    """Redeem a customer's reward by resetting stamps to 0.
+
+    Optionally pass X-Scanner-User-Id header to track which team member performed the redemption.
+    """
+    customer = CustomerRepository.get_by_id(customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    # Get max stamps from active design for this business
+    business_id = customer.get("business_id")
+    max_stamps = 10
+    if business_id:
+        design = CardDesignRepository.get_active(business_id)
+        if design:
+            max_stamps = design.get("total_stamps", 10)
+
+    # Check if customer is eligible for reward
+    if customer["stamps"] < max_stamps:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Customer only has {customer['stamps']}/{max_stamps} stamps. Not eligible for reward yet.",
+        )
+
+    # Reset stamps to 0
+    CustomerRepository.reset_stamps(customer_id)
+
+    # Track scanner activity if user_id is provided
+    if x_scanner_user_id and business_id:
+        try:
+            MembershipRepository.record_scan_activity(x_scanner_user_id, business_id)
+        except Exception:
+            # Don't fail the redeem operation if activity tracking fails
+            pass
+
+    # Trigger push notification for pass update
+    push_tokens = DeviceRepository.get_push_tokens(customer_id)
+    if push_tokens:
+        await apns_client.send_to_all_devices(push_tokens)
+
+    return StampResponse(
+        customer_id=customer_id,
+        name=customer["name"],
+        stamps=0,
+        message="Reward redeemed! Card has been reset.",
+    )

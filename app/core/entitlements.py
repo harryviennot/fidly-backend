@@ -59,27 +59,28 @@ def require_can_create_design(
 ) -> BusinessAccessContext:
     """Dependency that checks if the business can create another design.
 
+    NOTE: Tier limits temporarily bypassed for MVP.
+
     Raises:
         LimitExceededError: If design limit would be exceeded
 
     Returns:
         The BusinessAccessContext for chaining
     """
-    business = BusinessRepository.get_by_id(ctx.business_id)
-    if not business:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Business not found"
-        )
-
-    limits = get_plan_limits(business["subscription_tier"])
-    max_designs = limits["max_card_designs"]
-
-    if max_designs is not None:
-        current = CardDesignRepository.count(ctx.business_id)
-        if current >= max_designs:
-            raise LimitExceededError("card designs", max_designs, current)
-
+    # BYPASSED FOR MVP: Re-enable when implementing paid tiers
+    # Original limit checking code preserved below:
+    # business = BusinessRepository.get_by_id(ctx.business_id)
+    # if not business:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_404_NOT_FOUND,
+    #         detail="Business not found"
+    #     )
+    # limits = get_plan_limits(business["subscription_tier"])
+    # max_designs = limits["max_card_designs"]
+    # if max_designs is not None:
+    #     current = CardDesignRepository.count(ctx.business_id)
+    #     if current >= max_designs:
+    #         raise LimitExceededError("card designs", max_designs, current)
     return ctx
 
 
@@ -88,27 +89,28 @@ def require_can_add_scanner(
 ) -> BusinessAccessContext:
     """Dependency that checks if the business can add another scanner.
 
+    NOTE: Tier limits temporarily bypassed for MVP.
+
     Raises:
         LimitExceededError: If scanner account limit would be exceeded
 
     Returns:
         The BusinessAccessContext for chaining
     """
-    business = BusinessRepository.get_by_id(ctx.business_id)
-    if not business:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Business not found"
-        )
-
-    limits = get_plan_limits(business["subscription_tier"])
-    max_scanners = limits["max_scanner_accounts"]
-
-    if max_scanners is not None:
-        current = MembershipRepository.count_by_role(ctx.business_id, "scanner")
-        if current >= max_scanners:
-            raise LimitExceededError("scanner accounts", max_scanners, current)
-
+    # BYPASSED FOR MVP: Re-enable when implementing paid tiers
+    # Original limit checking code preserved below:
+    # business = BusinessRepository.get_by_id(ctx.business_id)
+    # if not business:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_404_NOT_FOUND,
+    #         detail="Business not found"
+    #     )
+    # limits = get_plan_limits(business["subscription_tier"])
+    # max_scanners = limits["max_scanner_accounts"]
+    # if max_scanners is not None:
+    #     current = MembershipRepository.count_by_role(ctx.business_id, "scanner")
+    #     if current >= max_scanners:
+    #         raise LimitExceededError("scanner accounts", max_scanners, current)
     return ctx
 
 

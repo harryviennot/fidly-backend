@@ -56,7 +56,7 @@ def create_business(
         elif "onboarding" in data.logo_url:
             # Onboarding bucket URL - copy to businesses bucket
             new_logo_url = storage.copy_onboarding_logo_to_business(
-                user_id=user["auth_id"],
+                user_id=user["id"],
                 business_id=business["id"]
             )
 
