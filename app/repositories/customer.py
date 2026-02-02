@@ -68,9 +68,10 @@ class CustomerRepository:
         current_stamps = customer.data[0]["stamps"]
         new_stamps = min(current_stamps + 1, max_stamps)
 
-        # Update stamps
+        # Update stamps and updated_at to trigger pass refresh
         db.table("customers").update({
-            "stamps": new_stamps
+            "stamps": new_stamps,
+            "updated_at": "now()"
         }).eq("id", customer_id).execute()
 
         return new_stamps
@@ -81,7 +82,8 @@ class CustomerRepository:
         """Reset a customer's stamps to 0. Returns 0."""
         db = get_db()
         db.table("customers").update({
-            "stamps": 0
+            "stamps": 0,
+            "updated_at": "now()"
         }).eq("id", customer_id).execute()
         return 0
 
