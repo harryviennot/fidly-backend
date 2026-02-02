@@ -106,6 +106,18 @@ class InvitationRepository:
         return bool(result and result.data and len(result.data) > 0)
 
     @staticmethod
+    @with_retry()
+    def count_pending_by_role(business_id: str, role: str) -> int:
+        """Count pending invitations for a specific role."""
+        db = get_db()
+        result = db.table("invitations").select(
+            "id", count="exact"
+        ).eq("business_id", business_id).eq(
+            "role", role
+        ).eq("status", "pending").execute()
+        return result.count if result and result.count is not None else 0
+
+    @staticmethod
     def is_expired(invitation: dict) -> bool:
         """Check if an invitation has expired."""
         expires_at_str = invitation.get("expires_at")
