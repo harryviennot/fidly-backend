@@ -115,3 +115,23 @@ class MembershipRepository:
             "last_active_at": "now()"
         }).eq("user_id", user_id).eq("business_id", business_id).execute()
         return result.data[0] if result and result.data else None
+
+    @staticmethod
+    @with_retry()
+    def count_by_role(business_id: str, role: str) -> int:
+        """Count memberships by role for a business."""
+        db = get_db()
+        result = db.table("memberships").select(
+            "id", count="exact"
+        ).eq("business_id", business_id).eq("role", role).execute()
+        return result.count if result and result.count is not None else 0
+
+    @staticmethod
+    @with_retry()
+    def count(business_id: str) -> int:
+        """Count all memberships for a business."""
+        db = get_db()
+        result = db.table("memberships").select(
+            "id", count="exact"
+        ).eq("business_id", business_id).execute()
+        return result.count if result and result.count is not None else 0

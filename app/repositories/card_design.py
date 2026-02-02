@@ -18,6 +18,9 @@ class CardDesignRepository:
         stamp_filled_color: str = "rgb(255, 215, 0)",
         stamp_empty_color: str = "rgb(80, 50, 20)",
         stamp_border_color: str = "rgb(255, 255, 255)",
+        stamp_icon: str = "checkmark",
+        reward_icon: str = "gift",
+        icon_color: str = "rgb(255, 255, 255)",
         secondary_fields: list | None = None,
         auxiliary_fields: list | None = None,
         back_fields: list | None = None,
@@ -37,6 +40,9 @@ class CardDesignRepository:
             "stamp_filled_color": stamp_filled_color,
             "stamp_empty_color": stamp_empty_color,
             "stamp_border_color": stamp_border_color,
+            "stamp_icon": stamp_icon,
+            "reward_icon": reward_icon,
+            "icon_color": icon_color,
             "secondary_fields": secondary_fields or [],
             "auxiliary_fields": auxiliary_fields or [],
             "back_fields": back_fields or [],
@@ -89,6 +95,16 @@ class CardDesignRepository:
         db = get_db()
         result = db.table("card_designs").delete().eq("id", design_id).execute()
         return bool(result and result.data and len(result.data) > 0)
+
+    @staticmethod
+    @with_retry()
+    def count(business_id: str) -> int:
+        """Count all card designs for a business."""
+        db = get_db()
+        result = db.table("card_designs").select(
+            "id", count="exact"
+        ).eq("business_id", business_id).execute()
+        return result.count if result and result.count is not None else 0
 
     @staticmethod
     @with_retry()
