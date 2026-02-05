@@ -349,7 +349,7 @@ def get_latest_demo_pass(
             created_dt = created_at
         # If pass was created more than 5 minutes ago, include promo message
         if (datetime.now(timezone.utc) - created_dt).total_seconds() > 300:
-            followup_message = "See? We can reach your customers like this. Ready to create your own? Visit stampeo.app"
+            followup_message = "Imagine reaching your customers like this. Ready to create your own loyalty program? Visit stampeo.app"
 
     generator = create_demo_pass_generator()
     pass_data = generator.generate_demo_pass(

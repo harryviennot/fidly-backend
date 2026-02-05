@@ -88,14 +88,16 @@ class DemoPassGenerator:
                     {
                         "key": "stamps",
                         "label": "STAMPS",
-                        "value": f"{stamps} / {DEMO_TOTAL_STAMPS}"
+                        "value": f"{stamps} / {DEMO_TOTAL_STAMPS}",
+                        "changeMessage": "You earned a stamp! Now at %@"
                     }
                 ],
                 "secondaryFields": [
                     {
                         "key": "reward",
                         "label": "REWARD",
-                        "value": "Free coffee at 8 stamps!"
+                        "value": "🎁 Free coffee!" if stamps >= DEMO_TOTAL_STAMPS else "Free coffee at 8 stamps!",
+                        "changeMessage": "%@"
                     }
                 ],
             },
@@ -127,7 +129,8 @@ class DemoPassGenerator:
             back_fields.insert(0, {
                 "key": "promo",
                 "label": "Did you see that?",
-                "value": followup_message
+                "value": followup_message,
+                "changeMessage": "Did you see that? %@"
             })
 
         pass_json["storeCard"]["backFields"] = back_fields
