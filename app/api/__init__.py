@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from .routes import (
     businesses,
     customers,
+    demo,
     designs,
     health,
     invitations,
@@ -42,3 +43,6 @@ api_router.include_router(wallet.router, prefix="/wallet", tags=["wallet"])
 
 # Public endpoints (no auth required)
 api_router.include_router(public.router, prefix="/public", tags=["public"])
+
+# Demo endpoints (interactive landing page demo)
+api_router.include_router(demo.router, prefix="/demo", tags=["demo"])

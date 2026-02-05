@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     apple_team_id: str = ""
     apple_pass_type_id: str = ""
 
+    # Demo pass (optional - falls back to apple_pass_type_id if not set)
+    demo_pass_type_id: str = ""
+    demo_cert_path: str = "certs/demo/signer_cert.pem"
+    demo_key_path: str = "certs/demo/signer_key.pem"
+    demo_wwdr_path: str = "certs/wwdr.pem"
+    demo_cert_password: str | None = None
+    demo_apns_cert_path: str = "certs/demo/apns_combined.pem"
+
     # Certificates
     cert_path: str = "certs/signerCert.pem"
     key_path: str = "certs/signerKey.pem"
