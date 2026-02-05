@@ -1,3 +1,4 @@
+import logging
 from functools import lru_cache
 from typing import Optional
 
@@ -8,6 +9,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
 
 # Bearer token extractor (auto_error=False allows optional auth)
 security = HTTPBearer(auto_error=False)
@@ -31,6 +33,7 @@ def verify_jwt(token: str) -> dict:
         kid = unverified_header.get("kid")
 
         if not alg:
+            logger.warning("JWT missing algorithm in header")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token: missing algorithm"
@@ -47,6 +50,17 @@ def verify_jwt(token: str) -> dict:
                 break
 
         if not key:
+            # JWKS might be stale — clear cache and retry once
+            logger.warning(f"JWT kid={kid} not found in cached JWKS, refreshing...")
+            get_jwks.cache_clear()
+            jwks = get_jwks()
+            for k in jwks.get("keys", []):
+                if k.get("kid") == kid:
+                    key = k
+                    break
+
+        if not key:
+            logger.error(f"JWT kid={kid} not found even after JWKS refresh. Available kids: {[k.get('kid') for k in jwks.get('keys', [])]}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=f"Invalid token: key not found for kid={kid}"
@@ -56,6 +70,7 @@ def verify_jwt(token: str) -> dict:
         # Support common algorithms: RS256, ES256, EdDSA
         allowed_algs = ["RS256", "ES256", "EdDSA", "HS256"]
         if alg not in allowed_algs:
+            logger.warning(f"JWT unsupported algorithm: {alg}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=f"Invalid token: unsupported algorithm {alg}"
@@ -72,6 +87,7 @@ def verify_jwt(token: str) -> dict:
         return payload
 
     except JWTError as e:
+        logger.warning(f"JWT verification failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid token: {str(e)}"
@@ -92,6 +108,7 @@ def require_auth(
 ) -> dict:
     """Require authentication - raises 401 if not authenticated."""
     if not credentials:
+        logger.warning("Auth required but no Bearer token provided")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
