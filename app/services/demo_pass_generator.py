@@ -15,9 +15,10 @@ from app.services.strip_generator import StripImageGenerator, StripConfig
 
 
 # Stampeo demo branding colors
-DEMO_ORANGE = "rgb(249, 115, 22)"
+DEMO_BLACK = "rgb(28, 28, 30)"  # Stampeo black background
 DEMO_WHITE = "rgb(255, 255, 255)"
-DEMO_DARK_ORANGE = "rgb(200, 80, 10)"
+DEMO_GREY = "rgb(156, 163, 175)"  # Label grey
+DEMO_ORANGE = "rgb(249, 115, 22)"  # Accent orange
 DEMO_TOTAL_STAMPS = 8
 
 
@@ -45,16 +46,16 @@ class DemoPassGenerator:
         # Pass assets directory
         self.assets_dir = Path(__file__).parent.parent.parent / "pass_assets"
 
-        # Fixed demo strip config (Stampeo orange theme)
+        # Fixed demo strip config (Stampeo black theme)
         strip_config = StripConfig(
-            background_color=(249, 115, 22),  # Stampeo orange
-            stamp_filled_color=(255, 255, 255),  # White
-            stamp_empty_color=(200, 80, 10),  # Dark orange
-            stamp_border_color=(255, 255, 255),  # White
+            background_color=(28, 28, 30),  # Stampeo black
+            stamp_filled_color=(249, 115, 22),  # Orange stamps
+            stamp_empty_color=(45, 45, 50),  # Darker grey empty
+            stamp_border_color=(156, 163, 175),  # Demo grey border
             total_stamps=DEMO_TOTAL_STAMPS,
             stamp_icon="checkmark",
             reward_icon="gift",
-            icon_color=(249, 115, 22),  # Orange icons on white stamps
+            icon_color=(255, 255, 255),  # White icons
         )
 
         self.strip_generator = StripImageGenerator(
@@ -81,7 +82,7 @@ class DemoPassGenerator:
             "description": "Stampeo Interactive Demo Card",
             "logoText": "Stampeo",
             "foregroundColor": DEMO_WHITE,
-            "backgroundColor": DEMO_ORANGE,
+            "backgroundColor": DEMO_BLACK,
             "labelColor": DEMO_WHITE,
             "storeCard": {
                 "headerFields": [
@@ -96,7 +97,7 @@ class DemoPassGenerator:
                     {
                         "key": "reward",
                         "label": "REWARD",
-                        "value": "🎁 Free coffee!" if stamps >= DEMO_TOTAL_STAMPS else "Free coffee at 8 stamps!",
+                        "value": "🎁 30 days free!" if stamps >= DEMO_TOTAL_STAMPS else "30 days free trial",
                         "changeMessage": "%@"
                     }
                 ],
@@ -115,12 +116,37 @@ class DemoPassGenerator:
             ]
         }
 
-        # Back fields with demo info and optional followup message
+        # Back fields - Stampeo info + demo of customization features
         back_fields = [
             {
-                "key": "info",
-                "label": "Demo Card",
-                "value": "This is a demo loyalty card from Stampeo. Visit stampeo.app to create your own!"
+                "key": "location",
+                "label": "📍 Location",
+                "value": "123 Main Street, Paris 75001"
+            },
+            {
+                "key": "hours",
+                "label": "🕐 Opening Hours",
+                "value": "Mon-Fri: 8am-7pm\nSat-Sun: 9am-5pm"
+            },
+            {
+                "key": "website",
+                "label": "🌐 Website",
+                "value": "www.stampeo.app"
+            },
+            {
+                "key": "contact",
+                "label": "📧 Contact",
+                "value": "harry@stampeo.app"
+            },
+            {
+                "key": "social",
+                "label": "📱 Follow Us",
+                "value": "@stampeo.app"
+            },
+            {
+                "key": "customize",
+                "label": "✨ Your Card, Your Way",
+                "value": "All these fields are fully customizable! Add your own location, hours, website, and more."
             },
         ]
 
