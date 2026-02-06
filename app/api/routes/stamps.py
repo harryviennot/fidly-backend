@@ -5,11 +5,57 @@ from app.repositories.customer import CustomerRepository
 from app.repositories.card_design import CardDesignRepository
 from app.repositories.device import DeviceRepository
 from app.repositories.membership import MembershipRepository
+from app.repositories.google_wallet import GoogleNotificationRepository
 from app.services.apns import APNsClient
+from app.services.google_wallet import create_google_wallet_client, is_google_wallet_configured
 from app.api.deps import get_apns_client
 from app.core.permissions import require_any_access, BusinessAccessContext
 
 router = APIRouter()
+
+
+def update_google_wallet_passes(customer_id: str, stamps: int, max_stamps: int):
+    """
+    Update Google Wallet passes for a customer.
+
+    Handles notification rate limiting (3 per 24h per pass).
+    This is synchronous as the Google Wallet API client uses blocking HTTP.
+    """
+    if not is_google_wallet_configured():
+        return
+
+    google_object_ids = DeviceRepository.get_google_registrations(customer_id)
+    if not google_object_ids:
+        return
+
+    try:
+        google_client = create_google_wallet_client()
+
+        # Determine if we should send a notification
+        should_notify = GoogleNotificationRepository.should_notify(
+            customer_id, stamps, max_stamps
+        )
+
+        for object_id in google_object_ids:
+            try:
+                google_client.update_loyalty_object(
+                    object_id,
+                    {"stamps": stamps},
+                    notify=should_notify
+                )
+
+                # Record notification if we sent one
+                if should_notify:
+                    notification_type = "reward" if stamps == max_stamps or stamps == 0 else "stamp"
+                    GoogleNotificationRepository.record_notification(
+                        customer_id, object_id, notification_type
+                    )
+
+            except Exception as e:
+                print(f"Failed to update Google Wallet object {object_id}: {e}")
+
+    except Exception as e:
+        print(f"Failed to create Google Wallet client: {e}")
 
 
 @router.post("/{business_id}/{customer_id}", response_model=StampResponse)
@@ -53,9 +99,13 @@ async def add_customer_stamp(
         # Don't fail the stamp operation if activity tracking fails
         pass
 
+    # Send Apple Wallet push notifications
     push_tokens = DeviceRepository.get_push_tokens(customer_id)
     if push_tokens:
         await apns_client.send_to_all_devices(push_tokens)
+
+    # Update Google Wallet passes
+    update_google_wallet_passes(customer_id, new_stamps, max_stamps)
 
     message = "Stamp added!"
     if new_stamps == max_stamps:
@@ -110,10 +160,13 @@ async def redeem_customer_reward(
         # Don't fail the redeem operation if activity tracking fails
         pass
 
-    # Trigger push notification for pass update
+    # Trigger Apple Wallet push notification for pass update
     push_tokens = DeviceRepository.get_push_tokens(customer_id)
     if push_tokens:
         await apns_client.send_to_all_devices(push_tokens)
+
+    # Update Google Wallet passes (stamps reset to 0)
+    update_google_wallet_passes(customer_id, 0, max_stamps)
 
     return StampResponse(
         customer_id=customer_id,

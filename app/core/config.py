@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     apns_use_sandbox: bool = False
     apns_cert_path: str = "certs/combined.pem"
 
+    # Google Wallet
+    google_wallet_issuer_id: str = ""  # Numeric issuer ID from Google Pay & Wallet Console
+    google_wallet_credentials_path: str = "certs/google-wallet-key.json"  # Service account JSON
+
     # ngrok
     ngrok_api_url: str | None = None
 

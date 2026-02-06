@@ -10,8 +10,11 @@ from app.repositories.card_design import CardDesignRepository
 from app.repositories.customer import CustomerRepository
 from app.repositories.device import DeviceRepository
 from app.repositories.business import BusinessRepository
+from app.repositories.google_wallet import GoogleWalletRepository
 from app.services.apns import APNsClient
 from app.services.storage import get_storage_service
+from app.services.google_wallet import create_google_wallet_client, is_google_wallet_configured
+from app.services.google_pass_generator import create_google_pass_generator
 from app.api.deps import get_apns_client
 from app.core.permissions import (
     require_any_access,
@@ -21,6 +24,49 @@ from app.core.permissions import (
 from app.core.entitlements import require_can_create_design
 
 router = APIRouter()
+
+
+def sync_google_wallet_class(business_id: str, design: dict):
+    """
+    Sync the Google Wallet LoyaltyClass for a business.
+
+    Called when a design is activated or updated.
+    Class updates propagate automatically to all LoyaltyObjects.
+    """
+    if not is_google_wallet_configured():
+        return
+
+    try:
+        google_client = create_google_wallet_client()
+        pass_generator = create_google_pass_generator()
+
+        # Get callback URL
+        from app.core.config import settings
+        callback_url = f"{settings.base_url}/google-wallet/callback"
+
+        class_id = pass_generator.generate_class_id(business_id)
+        class_data = pass_generator.design_to_class(design, business_id, callback_url)
+
+        existing = google_client.get_loyalty_class(class_id)
+
+        if existing:
+            google_client.update_loyalty_class(class_id, class_data)
+            print(f"Updated Google Wallet class: {class_id}")
+        else:
+            google_client.create_loyalty_class(class_id, class_data)
+            print(f"Created Google Wallet class: {class_id}")
+
+        # Store in database
+        GoogleWalletRepository.upsert_class(
+            business_id=business_id,
+            card_design_id=design.get("id"),
+            class_id=class_id,
+            class_data=class_data
+        )
+
+    except Exception as e:
+        # Don't fail the design operation if Google sync fails
+        print(f"Failed to sync Google Wallet class: {e}")
 
 
 def _design_to_response(design: dict) -> CardDesignResponse:
@@ -164,11 +210,15 @@ async def update_design(
 
     # If this is the active design, send push notifications to all customers
     if existing.get("is_active") and update_data:
+        # Send Apple Wallet push notifications
         customers = CustomerRepository.get_all(ctx.business_id)
         for customer in customers:
             push_tokens = DeviceRepository.get_push_tokens(customer["id"])
             if push_tokens:
                 await apns_client.send_to_all_devices(push_tokens)
+
+        # Sync Google Wallet class (propagates to all Google Wallet passes)
+        sync_google_wallet_class(ctx.business_id, design)
 
     return _design_to_response(design)
 
@@ -219,12 +269,15 @@ async def activate_design(
     # Activate the design (deactivates others for this business)
     design = CardDesignRepository.set_active(ctx.business_id, design_id)
 
-    # Send push notifications to all registered devices for this business's customers
+    # Send Apple Wallet push notifications to all registered devices
     customers = CustomerRepository.get_all(ctx.business_id)
     for customer in customers:
         push_tokens = DeviceRepository.get_push_tokens(customer["id"])
         if push_tokens:
             await apns_client.send_to_all_devices(push_tokens)
+
+    # Sync Google Wallet class (propagates to all Google Wallet passes)
+    sync_google_wallet_class(ctx.business_id, design)
 
     return _design_to_response(design)
 

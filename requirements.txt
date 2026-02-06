@@ -14,3 +14,8 @@ supabase>=2.0.0
 python-jose[cryptography]>=3.3.0
 resend>=0.7.0
 cairosvg>=2.7.0
+
+# Google Wallet
+google-auth>=2.0.0
+google-auth-httplib2>=0.1.0
+PyJWT>=2.0.0
