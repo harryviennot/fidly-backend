@@ -85,16 +85,21 @@ def main():
     output_dir = Path(__file__).parent.parent / "pass_assets"
     output_dir.mkdir(exist_ok=True)
 
-    # Create icons at different resolutions
-    create_icon(29, "icon.png", output_dir)
-    create_icon(58, "icon@2x.png", output_dir)
-    create_icon(87, "icon@3x.png", output_dir)
+    # Create icons at different resolutions (only if they don't exist)
+    if not (output_dir / "icon.png").exists():
+        create_icon(29, "icon.png", output_dir)
+    if not (output_dir / "icon@2x.png").exists():
+        create_icon(58, "icon@2x.png", output_dir)
+    if not (output_dir / "icon@3x.png").exists():
+        create_icon(87, "icon@3x.png", output_dir)
 
-    # Create logos
-    create_logo(160, 50, "logo.png", output_dir)
-    create_logo(320, 100, "logo@2x.png", output_dir)
+    # Create logos (only if they don't exist)
+    if not (output_dir / "logo.png").exists():
+        create_logo(160, 50, "logo.png", output_dir)
+    if not (output_dir / "logo@2x.png").exists():
+        create_logo(320, 100, "logo@2x.png", output_dir)
 
-    print("\nPass assets created successfully!")
+    print("\nPass assets check complete!")
     print(f"Location: {output_dir}")
 
 
