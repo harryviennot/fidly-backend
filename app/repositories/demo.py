@@ -42,12 +42,19 @@ class DemoSessionRepository:
 
     @staticmethod
     @with_retry()
-    def update_status(session_id: str, status: str, demo_customer_id: str = None) -> dict | None:
-        """Update session status and optionally link customer."""
+    def update_status(
+        session_id: str,
+        status: str,
+        demo_customer_id: str = None,
+        wallet_provider: str = None,
+    ) -> dict | None:
+        """Update session status and optionally link customer/wallet provider."""
         db = get_db()
         data = {"status": status}
         if demo_customer_id:
             data["demo_customer_id"] = demo_customer_id
+        if wallet_provider:
+            data["wallet_provider"] = wallet_provider
         result = db.table("demo_sessions").update(data).eq("id", session_id).execute()
         return result.data[0] if result and result.data else None
 
@@ -143,13 +150,14 @@ class DemoDeviceRepository:
     @staticmethod
     @with_retry()
     def register(demo_customer_id: str, device_library_id: str, push_token: str):
-        """Register a device for push notifications."""
+        """Register an Apple Wallet device for push notifications."""
         db = get_db()
         db.table("demo_push_registrations").upsert({
             "demo_customer_id": demo_customer_id,
             "device_library_id": device_library_id,
             "push_token": push_token,
-        }, on_conflict="demo_customer_id,device_library_id").execute()
+            "wallet_type": "apple",
+        }, on_conflict="demo_customer_id,device_library_id,wallet_type").execute()
 
     @staticmethod
     @with_retry()
@@ -179,3 +187,43 @@ class DemoDeviceRepository:
             "device_library_id", device_library_id
         ).execute()
         return [row["demo_customer_id"] for row in result.data]
+
+    @staticmethod
+    @with_retry()
+    def register_google(demo_customer_id: str, google_object_id: str):
+        """Register a Google Wallet save for demo."""
+        db = get_db()
+        db.table("demo_push_registrations").upsert({
+            "demo_customer_id": demo_customer_id,
+            "wallet_type": "google",
+            "google_object_id": google_object_id,
+        }, on_conflict="demo_customer_id,google_object_id").execute()
+
+    @staticmethod
+    @with_retry()
+    def unregister_google(demo_customer_id: str, google_object_id: str):
+        """Unregister a Google Wallet save for demo."""
+        db = get_db()
+        db.table("demo_push_registrations").delete().eq(
+            "demo_customer_id", demo_customer_id
+        ).eq("google_object_id", google_object_id).execute()
+
+    @staticmethod
+    @with_retry()
+    def get_wallet_type(demo_customer_id: str) -> str | None:
+        """Get the wallet type used by this demo customer."""
+        db = get_db()
+        result = db.table("demo_push_registrations").select("wallet_type").eq(
+            "demo_customer_id", demo_customer_id
+        ).limit(1).execute()
+        return result.data[0]["wallet_type"] if result.data else None
+
+    @staticmethod
+    @with_retry()
+    def has_google_wallet(demo_customer_id: str) -> bool:
+        """Check if demo customer has a Google Wallet registration."""
+        db = get_db()
+        result = db.table("demo_push_registrations").select("id").eq(
+            "demo_customer_id", demo_customer_id
+        ).eq("wallet_type", "google").limit(1).execute()
+        return bool(result.data)
