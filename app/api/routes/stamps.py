@@ -71,16 +71,11 @@ async def add_customer_stamp(
 
     if business and design:
         try:
-            logger.info(
-                f"[Stamps] Triggering wallet updates for customer {customer_id}, "
-                f"new_stamps={new_stamps}"
-            )
-            result = await coordinator.on_stamp_added(
+            await coordinator.on_stamp_added(
                 customer=updated_customer,
                 business=business,
                 design=design,
             )
-            logger.info(f"[Stamps] Wallet update results: {result}")
         except Exception as e:
             # Don't fail the stamp operation if wallet update fails
             logger.error(f"[Stamps] Wallet update error: {e}", exc_info=True)
@@ -148,15 +143,11 @@ async def redeem_customer_reward(
 
     if business and design:
         try:
-            logger.info(
-                f"[Stamps] Triggering wallet updates for redemption, customer {customer_id}"
-            )
-            result = await coordinator.on_stamp_added(
+            await coordinator.on_stamp_added(
                 customer=updated_customer,
                 business=business,
                 design=design,
             )
-            logger.info(f"[Stamps] Wallet update results after redemption: {result}")
         except Exception as e:
             # Don't fail the redeem operation if wallet update fails
             logger.error(f"[Stamps] Wallet update error on redemption: {e}", exc_info=True)

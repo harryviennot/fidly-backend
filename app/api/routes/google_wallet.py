@@ -39,17 +39,12 @@ def google_wallet_callback(
     Returns:
         200 OK if callback was processed successfully
     """
-    # Log the full payload for debugging
-    logger.info(f"[Google Wallet Callback] Received payload: {json.dumps(body, indent=2)}")
-
     # Parse the signedMessage - Google sends the actual data as a JSON string
     # inside the signedMessage field (part of their signing protocol)
     callback_data = body
     if "signedMessage" in body:
         try:
-            signed_message = json.loads(body["signedMessage"])
-            callback_data = signed_message
-            logger.info(f"[Google Wallet Callback] Parsed signedMessage: {signed_message}")
+            callback_data = json.loads(body["signedMessage"])
         except json.JSONDecodeError as e:
             logger.error(f"[Google Wallet Callback] Failed to parse signedMessage: {e}")
 
@@ -59,7 +54,6 @@ def google_wallet_callback(
     if nonce:
         # Check if we've already processed this callback
         if CallbackNonceRepository.exists(nonce):
-            logger.info(f"[Google Wallet Callback] Duplicate nonce {nonce}, skipping")
             return Response(status_code=200)
 
         # Mark nonce as processed
@@ -68,18 +62,8 @@ def google_wallet_callback(
     # Process the callback
     try:
         google_service = create_google_wallet_service()
-        result = google_service.handle_callback(callback_data)
-
-        event_type = callback_data.get("eventType", "unknown")
-        object_id = callback_data.get("objectId", "unknown")
-
-        logger.info(
-            f"[Google Wallet Callback] Processed: event_type={event_type}, "
-            f"object_id={object_id[:50] if object_id != 'unknown' else 'unknown'}, "
-            f"result={result}"
-        )
-
-        return {"status": "ok", "result": result}
+        google_service.handle_callback(callback_data)
+        return {"status": "ok"}
 
     except Exception as e:
         # Log error but still return 200 to prevent retries

@@ -316,17 +316,9 @@ class GoogleWalletService:
         object_id = self._get_object_id(customer["id"])
         payload = self._build_object_payload(customer, business, design, stamp_count)
 
-        logger.info(
-            f"[Google Wallet] Creating object {object_id} with stamp_count={stamp_count}"
-        )
-
         response = self.http_client.post(
             f"{self.WALLET_API_BASE}/genericObject",
             json=payload,
-        )
-
-        logger.info(
-            f"[Google Wallet] POST response: status={response.status_code}"
         )
 
         # 409 means object already exists - that's okay
@@ -335,9 +327,6 @@ class GoogleWalletService:
                 f"[Google Wallet] Create failed: {response.status_code} - {response.text}"
             )
             response.raise_for_status()
-
-        if response.status_code == 409:
-            logger.info("[Google Wallet] Object already exists (409), that's OK")
 
         return object_id
 
@@ -356,27 +345,14 @@ class GoogleWalletService:
         object_id = self._get_object_id(customer["id"])
         payload = self._build_object_payload(customer, business, design, stamp_count)
 
-        logger.info(
-            f"[Google Wallet] Updating object {object_id} with stamp_count={stamp_count}"
-        )
-
-        # Get hero URL for logging
-        hero_url = payload.get("heroImage", {}).get("sourceUri", {}).get("uri")
-        logger.info(f"[Google Wallet] Hero image URL: {hero_url}")
-
         # Use PATCH for partial update
         response = self.http_client.patch(
             f"{self.WALLET_API_BASE}/genericObject/{object_id}",
             json=payload,
         )
 
-        logger.info(
-            f"[Google Wallet] PATCH response: status={response.status_code}"
-        )
-
         if response.status_code == 404:
             # Object doesn't exist, create it
-            logger.info("[Google Wallet] Object not found, creating new object")
             return self.create_object(customer, business, design, stamp_count)
 
         if response.status_code not in (200, 201):
@@ -385,7 +361,6 @@ class GoogleWalletService:
             )
             response.raise_for_status()
 
-        logger.info(f"[Google Wallet] Successfully updated object {object_id}")
         return object_id
 
     def generate_save_url(

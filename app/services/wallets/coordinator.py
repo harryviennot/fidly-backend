@@ -141,11 +141,6 @@ class PassCoordinator:
         customer_id = customer["id"]
         stamp_count = customer.get("stamps", 0)
 
-        logger.info(
-            f"[PassCoordinator] on_stamp_added called for customer {customer_id}, "
-            f"stamps={stamp_count}"
-        )
-
         results = {
             "apple": None,
             "google": None,
@@ -153,13 +148,9 @@ class PassCoordinator:
 
         # Update Apple Wallet (via push notification)
         # Apple requires registration because we need the device push token
-        has_apple = WalletRegistrationRepository.has_apple_wallet(customer_id)
-        logger.info(f"[PassCoordinator] has_apple_wallet={has_apple}")
-
-        if has_apple:
+        if WalletRegistrationRepository.has_apple_wallet(customer_id):
             try:
                 results["apple"] = await self.apple.send_update(customer_id)
-                logger.info(f"[PassCoordinator] Apple update result: {results['apple']}")
             except Exception as e:
                 logger.error(f"[PassCoordinator] Apple Wallet update error: {e}")
                 results["apple"] = {"error": str(e)}
@@ -169,7 +160,6 @@ class PassCoordinator:
         # deterministic ({issuerId}.{customerId}). We always try to update since
         # Google callbacks can be unreliable and the pass might exist without
         # a registration in our database.
-        logger.info("[PassCoordinator] Attempting Google Wallet update...")
         try:
             self.google.update_object(
                 customer=customer,
@@ -178,7 +168,6 @@ class PassCoordinator:
                 stamp_count=stamp_count,
             )
             results["google"] = {"success": True}
-            logger.info("[PassCoordinator] Google Wallet update succeeded")
         except Exception as e:
             logger.error(f"[PassCoordinator] Google Wallet update error: {e}")
             results["google"] = {"error": str(e)}
