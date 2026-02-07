@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
+import asyncio
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, BackgroundTasks
 
 from app.domain.schemas import (
     CardDesignCreate,
@@ -8,11 +9,9 @@ from app.domain.schemas import (
 )
 from app.repositories.card_design import CardDesignRepository
 from app.repositories.customer import CustomerRepository
-from app.repositories.device import DeviceRepository
 from app.repositories.business import BusinessRepository
-from app.services.apns import APNsClient
 from app.services.storage import get_storage_service
-from app.api.deps import get_apns_client
+from app.services.wallets import PassCoordinator, create_pass_coordinator
 from app.core.permissions import (
     require_any_access,
     require_owner_access,
@@ -21,6 +20,11 @@ from app.core.permissions import (
 from app.core.entitlements import require_can_create_design
 
 router = APIRouter()
+
+
+def get_pass_coordinator() -> PassCoordinator:
+    """Dependency to get PassCoordinator."""
+    return create_pass_coordinator()
 
 
 def _design_to_response(design: dict) -> CardDesignResponse:
@@ -96,9 +100,13 @@ def get_design(
 def create_design(
     data: CardDesignCreate,
     ctx: BusinessAccessContext = Depends(require_owner_access),
-    _entitlement: BusinessAccessContext = Depends(require_can_create_design)
+    _entitlement: BusinessAccessContext = Depends(require_can_create_design),
+    coordinator: PassCoordinator = Depends(get_pass_coordinator),
 ):
-    """Create a new card design for a business (requires owner role and plan allowance)."""
+    """Create a new card design for a business (requires owner role and plan allowance).
+
+    Pre-generates strip images for both Apple and Google Wallet (synchronous).
+    """
     # Convert PassField objects to dicts for storage
     secondary_fields = [f.model_dump() for f in data.secondary_fields]
     auxiliary_fields = [f.model_dump() for f in data.auxiliary_fields]
@@ -128,6 +136,13 @@ def create_design(
     if not design:
         raise HTTPException(status_code=500, detail="Failed to create design")
 
+    # Pre-generate strip images for both Apple and Google Wallet (synchronous)
+    try:
+        coordinator.pregenerate_strips_for_design(design, ctx.business_id)
+    except Exception as e:
+        print(f"Strip pre-generation error: {e}")
+        # Don't fail design creation if strip generation fails
+
     return _design_to_response(design)
 
 
@@ -135,10 +150,15 @@ def create_design(
 async def update_design(
     design_id: str,
     data: CardDesignUpdate,
+    background_tasks: BackgroundTasks,
     ctx: BusinessAccessContext = Depends(require_owner_access),
-    apns_client: APNsClient = Depends(get_apns_client)
+    coordinator: PassCoordinator = Depends(get_pass_coordinator),
 ):
-    """Update a card design (requires owner role)."""
+    """Update a card design (requires owner role).
+
+    If design is active and affects strips, regenerates strips in background
+    and notifies customers after completion.
+    """
     existing = CardDesignRepository.get_by_id(design_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Design not found")
@@ -162,13 +182,36 @@ async def update_design(
     else:
         design = existing
 
-    # If this is the active design, send push notifications to all customers
-    if existing.get("is_active") and update_data:
-        customers = CustomerRepository.get_all(ctx.business_id)
-        for customer in customers:
-            push_tokens = DeviceRepository.get_push_tokens(customer["id"])
-            if push_tokens:
-                await apns_client.send_to_all_devices(push_tokens)
+    # Check if changes affect strip appearance
+    strip_affecting_fields = {
+        "background_color", "stamp_filled_color", "stamp_empty_color",
+        "stamp_border_color", "total_stamps", "stamp_icon", "reward_icon",
+        "icon_color"
+    }
+    affects_strips = any(field in update_data for field in strip_affecting_fields)
+
+    if update_data and affects_strips:
+        business = BusinessRepository.get_by_id(ctx.business_id)
+
+        if existing.get("is_active"):
+            # Active design: regenerate strips in background, then notify customers
+            async def regenerate_and_notify():
+                try:
+                    await coordinator.on_design_updated(
+                        business=business,
+                        design=design,
+                        regenerate_strips=True,
+                    )
+                except Exception as e:
+                    print(f"Background design update error: {e}")
+
+            background_tasks.add_task(regenerate_and_notify)
+        else:
+            # Inactive design: regenerate strips synchronously
+            try:
+                coordinator.pregenerate_strips_for_design(design, ctx.business_id)
+            except Exception as e:
+                print(f"Strip regeneration error: {e}")
 
     return _design_to_response(design)
 
@@ -176,7 +219,8 @@ async def update_design(
 @router.delete("/{business_id}/{design_id}")
 def delete_design(
     design_id: str,
-    ctx: BusinessAccessContext = Depends(require_owner_access)
+    ctx: BusinessAccessContext = Depends(require_owner_access),
+    coordinator: PassCoordinator = Depends(get_pass_coordinator),
 ):
     """Delete a card design (requires owner role)."""
     existing = CardDesignRepository.get_by_id(design_id)
@@ -196,6 +240,10 @@ def delete_design(
     # Delete uploaded assets from Supabase Storage
     storage = get_storage_service()
     storage.delete_card_assets(ctx.business_id, design_id)
+    storage.delete_strip_images(ctx.business_id, design_id)
+
+    # Delete strip image records from database
+    coordinator.strips.delete_strips_for_design(design_id)
 
     CardDesignRepository.delete(design_id)
     return {"message": "Design deleted"}
@@ -204,10 +252,15 @@ def delete_design(
 @router.post("/{business_id}/{design_id}/activate", response_model=CardDesignResponse)
 async def activate_design(
     design_id: str,
+    background_tasks: BackgroundTasks,
     ctx: BusinessAccessContext = Depends(require_owner_access),
-    apns_client: APNsClient = Depends(get_apns_client)
+    coordinator: PassCoordinator = Depends(get_pass_coordinator),
 ):
-    """Set a design as active and push updates to all passes (requires owner role)."""
+    """Set a design as active and push updates to all passes (requires owner role).
+
+    Strips should already exist from design creation. Updates Google Wallet class
+    and sends push notifications to all customers.
+    """
     design = CardDesignRepository.get_by_id(design_id)
     if not design:
         raise HTTPException(status_code=404, detail="Design not found")
@@ -216,15 +269,29 @@ async def activate_design(
     if design.get("business_id") != ctx.business_id:
         raise HTTPException(status_code=404, detail="Design not found")
 
+    # Get business for wallet updates
+    business = BusinessRepository.get_by_id(ctx.business_id)
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
     # Activate the design (deactivates others for this business)
     design = CardDesignRepository.set_active(ctx.business_id, design_id)
 
-    # Send push notifications to all registered devices for this business's customers
-    customers = CustomerRepository.get_all(ctx.business_id)
-    for customer in customers:
-        push_tokens = DeviceRepository.get_push_tokens(customer["id"])
-        if push_tokens:
-            await apns_client.send_to_all_devices(push_tokens)
+    # Handle activation: update Google class and notify customers
+    result = coordinator.on_design_activated(business, design)
+
+    # Send notifications to all customers in background
+    async def notify_all_customers():
+        try:
+            await coordinator.on_design_updated(
+                business=business,
+                design=design,
+                regenerate_strips=not result.get("strips_exist", False),
+            )
+        except Exception as e:
+            print(f"Customer notification error: {e}")
+
+    background_tasks.add_task(notify_all_customers)
 
     return _design_to_response(design)
 

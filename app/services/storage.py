@@ -287,6 +287,47 @@ class StorageService:
                 success = False
         return success
 
+    def delete_strip_images(self, business_id: str, design_id: str) -> bool:
+        """
+        Delete all pre-generated strip images for a card design.
+
+        Strips are stored at: {business_id}/cards/{design_id}/strips/{platform}/
+
+        Args:
+            business_id: The business's ID
+            design_id: The card design's ID
+
+        Returns:
+            True if deletion was successful (or no files existed)
+        """
+        try:
+            # List and delete all files in the strips directory
+            base_path = f"{business_id}/cards/{design_id}/strips"
+
+            # Delete Apple strips
+            apple_path = f"{base_path}/apple"
+            try:
+                files = self.supabase.storage.from_(self.BUSINESSES_BUCKET).list(apple_path)
+                if files:
+                    paths = [f"{apple_path}/{f['name']}" for f in files]
+                    self.supabase.storage.from_(self.BUSINESSES_BUCKET).remove(paths)
+            except Exception:
+                pass  # Directory may not exist
+
+            # Delete Google strips
+            google_path = f"{base_path}/google"
+            try:
+                files = self.supabase.storage.from_(self.BUSINESSES_BUCKET).list(google_path)
+                if files:
+                    paths = [f"{google_path}/{f['name']}" for f in files]
+                    self.supabase.storage.from_(self.BUSINESSES_BUCKET).remove(paths)
+            except Exception:
+                pass  # Directory may not exist
+
+            return True
+        except Exception:
+            return False
+
 
 # Singleton instance
 _storage_service: Optional[StorageService] = None

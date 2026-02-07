@@ -8,7 +8,9 @@ from fastapi import APIRouter, HTTPException
 from app.domain.schemas import CustomerPublicCreate, CustomerPublicResponse
 from app.repositories.business import BusinessRepository
 from app.repositories.customer import CustomerRepository
+from app.repositories.card_design import CardDesignRepository
 from app.services.email import get_email_service
+from app.services.wallets import create_pass_coordinator
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -96,7 +98,19 @@ def register_customer(business_id: str, data: CustomerPublicCreate):
     if not result:
         raise HTTPException(status_code=500, detail="Failed to create customer")
 
+    # Generate wallet URLs using PassCoordinator
     pass_url = f"{settings.base_url}/passes/{result['id']}"
+    google_wallet_url = None
+
+    design = CardDesignRepository.get_active(business_id)
+    if business and design:
+        try:
+            coordinator = create_pass_coordinator()
+            wallet_urls = coordinator.on_customer_created(result, business, design)
+            pass_url = wallet_urls.get("apple_url") or pass_url
+            google_wallet_url = wallet_urls.get("google_url")
+        except Exception as e:
+            logger.error(f"Wallet URL generation error: {e}")
 
     logger.info(f"Created new customer {result['id']} for business {business_id}")
 
@@ -104,5 +118,6 @@ def register_customer(business_id: str, data: CustomerPublicCreate):
         status="created",
         customer_id=result["id"],
         pass_url=pass_url,
+        google_wallet_url=google_wallet_url,
         message="Your loyalty card is ready! Add it to your wallet.",
     )
