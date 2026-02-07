@@ -87,25 +87,14 @@ class GoogleWalletService:
         bg_color = design.get("background_color", "rgb(139, 90, 43)")
         hex_color = self._rgb_to_hex(bg_color)
 
+        # Build dynamic card row template based on design fields
+        card_rows = self._build_card_row_template_infos(design)
+
         payload = {
             "id": class_id,
             "classTemplateInfo": {
                 "cardTemplateOverride": {
-                    "cardRowTemplateInfos": [
-                        {
-                            "oneItem": {
-                                "item": {
-                                    "firstValue": {
-                                        "fields": [
-                                            {
-                                                "fieldPath": "object.textModulesData['stamps']"
-                                            }
-                                        ]
-                                    }
-                                }
-                            }
-                        }
-                    ]
+                    "cardRowTemplateInfos": card_rows
                 }
             },
             "imageModulesDataMainImageUriDescription": "Loyalty Progress",
@@ -164,51 +153,54 @@ class GoogleWalletService:
         )
 
         total_stamps = design.get("total_stamps", 10)
-        reward_name = design.get("reward_description", "Free reward")
+        description = design.get("description", "Loyalty Card")
 
         # Parse colors
         bg_color = design.get("background_color", "rgb(139, 90, 43)")
         hex_color = self._rgb_to_hex(bg_color)
 
+        # Build textModulesData from design fields only (no defaults)
+        text_modules = []
+
+        # Secondary fields (displayed on card front - one row)
+        secondary_fields = design.get("secondary_fields", [])
+        text_modules.extend(
+            self._convert_pass_fields_to_text_modules(secondary_fields, "sec_")
+        )
+
+        # Auxiliary fields (displayed on card front - one row)
+        auxiliary_fields = design.get("auxiliary_fields", [])
+        text_modules.extend(
+            self._convert_pass_fields_to_text_modules(auxiliary_fields, "aux_")
+        )
+
+        # Back fields (displayed in details section only - not in cardRowTemplateInfos)
+        back_fields = design.get("back_fields", [])
+        text_modules.extend(
+            self._convert_pass_fields_to_text_modules(back_fields, "back_")
+        )
+
         payload = {
             "id": object_id,
             "classId": class_id,
             "state": "ACTIVE",
-            "textModulesData": [
-                {
-                    "id": "stamps",
-                    "header": "STAMPS",
-                    "body": f"{stamp_count} / {total_stamps}",
-                },
-                {
-                    "id": "reward",
-                    "header": "REWARD",
-                    "body": reward_name,
-                }
-            ],
+            "textModulesData": text_modules,
             "cardTitle": {
                 "defaultValue": {
                     "language": "en",
                     "value": business.get("name", "Loyalty Card")
                 }
             },
-            "subheader": {
-                "defaultValue": {
-                    "language": "en",
-                    "value": "Loyalty Card"
-                }
-            },
             "header": {
                 "defaultValue": {
                     "language": "en",
-                    "value": customer.get("name", "Customer")
+                    "value": description
                 }
             },
             "hexBackgroundColor": hex_color,
             "barcode": {
                 "type": "QR_CODE",
                 "value": customer["id"],
-                "alternateText": customer.get("name", ""),
             },
         }
 
@@ -262,6 +254,123 @@ class GoogleWalletService:
                 pass
 
         return "#8B5A2B"  # Default brown
+
+    def _convert_pass_fields_to_text_modules(
+        self,
+        fields: list[dict],
+        prefix: str,
+    ) -> list[dict]:
+        """
+        Convert Apple Wallet PassField format to Google Wallet textModulesData.
+
+        Args:
+            fields: List of {key, label, value} dicts from design
+            prefix: ID prefix ('sec_', 'aux_', 'back_') for uniqueness
+
+        Returns:
+            List of {id, header, body} dicts for textModulesData
+        """
+        return [
+            {
+                "id": f"{prefix}{field['key']}",
+                "header": field["label"],
+                "body": field["value"],
+            }
+            for field in fields
+        ]
+
+    def _build_card_row_template_infos(self, design: dict) -> list[dict]:
+        """
+        Build cardRowTemplateInfos for the class template.
+
+        This defines which textModulesData fields appear on the card front
+        and how they are arranged.
+
+        Layout strategy:
+        - Row 1: All secondary fields (up to 3 per row)
+        - Row 2: All auxiliary fields (up to 3 per row)
+
+        Note: back_fields are NOT included here - they automatically
+        appear in the details section since they're not referenced.
+        """
+        rows = []
+
+        # Build secondary fields row
+        secondary_fields = design.get("secondary_fields", [])
+        if secondary_fields:
+            secondary_row = self._build_row_from_fields(secondary_fields, "sec_")
+            if secondary_row:
+                rows.append(secondary_row)
+
+        # Build auxiliary fields row
+        auxiliary_fields = design.get("auxiliary_fields", [])
+        if auxiliary_fields:
+            auxiliary_row = self._build_row_from_fields(auxiliary_fields, "aux_")
+            if auxiliary_row:
+                rows.append(auxiliary_row)
+
+        return rows
+
+    def _build_row_from_fields(self, fields: list[dict], prefix: str) -> dict | None:
+        """
+        Build a single card row from a list of fields.
+
+        Google Wallet supports oneItem, twoItems, or threeItems per row.
+        """
+        if not fields:
+            return None
+
+        field_paths = [
+            {"fieldPath": f"object.textModulesData['{prefix}{field['key']}']"}
+            for field in fields
+        ]
+
+        if len(field_paths) == 1:
+            return {
+                "oneItem": {
+                    "item": {
+                        "firstValue": {
+                            "fields": [field_paths[0]]
+                        }
+                    }
+                }
+            }
+        elif len(field_paths) == 2:
+            return {
+                "twoItems": {
+                    "startItem": {
+                        "firstValue": {
+                            "fields": [field_paths[0]]
+                        }
+                    },
+                    "endItem": {
+                        "firstValue": {
+                            "fields": [field_paths[1]]
+                        }
+                    }
+                }
+            }
+        else:
+            # 3 or more fields - use threeItems (max supported by Google)
+            return {
+                "threeItems": {
+                    "startItem": {
+                        "firstValue": {
+                            "fields": [field_paths[0]]
+                        }
+                    },
+                    "middleItem": {
+                        "firstValue": {
+                            "fields": [field_paths[1]]
+                        }
+                    },
+                    "endItem": {
+                        "firstValue": {
+                            "fields": [field_paths[2]]
+                        }
+                    }
+                }
+            }
 
     def create_or_update_class(
         self,
