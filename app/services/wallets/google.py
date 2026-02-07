@@ -159,10 +159,16 @@ class GoogleWalletService:
         bg_color = design.get("background_color", "rgb(139, 90, 43)")
         hex_color = self._rgb_to_hex(bg_color)
 
-        # Build textModulesData from design fields only (no defaults)
-        text_modules = []
+        # Build textModulesData - stamps first, then design fields
+        text_modules = [
+            {
+                "id": "stamps",
+                "header": "STAMPS",
+                "body": f"{stamp_count} / {total_stamps}",
+            }
+        ]
 
-        # Secondary fields (displayed on card front - one row)
+        # Secondary fields (displayed on card front - row 2)
         secondary_fields = design.get("secondary_fields", [])
         text_modules.extend(
             self._convert_pass_fields_to_text_modules(secondary_fields, "sec_")
@@ -287,22 +293,36 @@ class GoogleWalletService:
         and how they are arranged.
 
         Layout strategy:
-        - Row 1: All secondary fields (up to 3 per row)
-        - Row 2: All auxiliary fields (up to 3 per row)
+        - Row 1: Stamp count (always present)
+        - Row 2: All secondary fields (up to 3 per row)
+        - Row 3: All auxiliary fields (up to 3 per row)
 
         Note: back_fields are NOT included here - they automatically
         appear in the details section since they're not referenced.
         """
-        rows = []
+        rows = [
+            # Row 1: Stamps (always first)
+            {
+                "oneItem": {
+                    "item": {
+                        "firstValue": {
+                            "fields": [
+                                {"fieldPath": "object.textModulesData['stamps']"}
+                            ]
+                        }
+                    }
+                }
+            }
+        ]
 
-        # Build secondary fields row
+        # Row 2: Secondary fields
         secondary_fields = design.get("secondary_fields", [])
         if secondary_fields:
             secondary_row = self._build_row_from_fields(secondary_fields, "sec_")
             if secondary_row:
                 rows.append(secondary_row)
 
-        # Build auxiliary fields row
+        # Row 3: Auxiliary fields
         auxiliary_fields = design.get("auxiliary_fields", [])
         if auxiliary_fields:
             auxiliary_row = self._build_row_from_fields(auxiliary_fields, "aux_")
