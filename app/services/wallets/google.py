@@ -223,7 +223,7 @@ class GoogleWalletService:
             }
 
         # Only add wideLogo if we have a valid URL
-        logo_url = design.get("logo_url")
+        logo_url = design.get("logo_path")
         if logo_url:
             payload["wideLogo"] = {
                 "sourceUri": {"uri": logo_url},
