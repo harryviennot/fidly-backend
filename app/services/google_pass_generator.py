@@ -1,9 +1,10 @@
 """
 Google Wallet pass generator.
-Converts card designs to Google Wallet LoyaltyClass/LoyaltyObject format.
+Converts card designs to Google Wallet GenericClass/GenericObject format.
 """
 
 import re
+import time
 from typing import Optional
 
 from app.services.strip_generator import StripImageGenerator, StripConfig
@@ -65,7 +66,9 @@ class GooglePassGenerator:
 
     def design_to_class(self, design: dict, business_id: str, callback_url: Optional[str] = None) -> dict:
         """
-        Convert a card design to Google Wallet LoyaltyClass format.
+        Convert a card design to Google Wallet GenericClass format.
+
+        GenericClass is minimal - most customization is at the object level.
 
         Args:
             design: Card design from database
@@ -73,62 +76,14 @@ class GooglePassGenerator:
             callback_url: Optional URL for save/delete callbacks
 
         Returns:
-            LoyaltyClass data ready for Google API
+            GenericClass data ready for Google API
         """
         class_id = self.generate_class_id(business_id)
 
         class_data = {
             "id": class_id,
-            "issuerName": design.get("organization_name", "Loyalty Program"),
-            "programName": design.get("description", "Loyalty Card"),
-            "hexBackgroundColor": rgb_to_hex(design.get("background_color")),
             "reviewStatus": "UNDER_REVIEW",
         }
-
-        # Add logo if available
-        logo_url = design.get("logo_path")
-        if logo_url:
-            class_data["programLogo"] = {
-                "sourceUri": {
-                    "uri": logo_url
-                },
-                "contentDescription": {
-                    "defaultValue": {
-                        "language": "en",
-                        "value": design.get("organization_name", "Logo")
-                    }
-                }
-            }
-
-        # Add hero image (equivalent to Apple's strip image)
-        # Generate URL to our dynamic hero image endpoint
-        hero_image_url = f"{self.base_url}/google-wallet/hero/{business_id}"
-        class_data["heroImage"] = {
-            "sourceUri": {
-                "uri": hero_image_url
-            },
-            "contentDescription": {
-                "defaultValue": {
-                    "language": "en",
-                    "value": "Stamp card"
-                }
-            }
-        }
-
-        # Add info module for secondary fields (reward text, etc.)
-        secondary_fields = design.get("secondary_fields", [])
-        if secondary_fields:
-            rows = []
-            for field in secondary_fields:
-                if field.get("label") and field.get("value"):
-                    rows.append({
-                        "columns": [{
-                            "label": field["label"],
-                            "value": field["value"]
-                        }]
-                    })
-            if rows:
-                class_data["infoModuleData"] = {"labelValueRows": rows}
 
         # Add links module for website
         back_fields = design.get("back_fields", [])
@@ -155,61 +110,123 @@ class GooglePassGenerator:
         self,
         customer: dict,
         class_id: str,
-        design: dict
+        design: dict,
+        business_id: Optional[str] = None
     ) -> dict:
         """
-        Convert a customer to Google Wallet LoyaltyObject format.
+        Convert a customer to Google Wallet GenericObject format.
+
+        GenericObject contains all the visual customization including
+        per-customer heroImage for stamp progress.
 
         Args:
             customer: Customer data from database
-            class_id: Parent LoyaltyClass ID
+            class_id: Parent GenericClass ID
             design: Card design for stamp configuration
+            business_id: Business UUID for hero image URL
 
         Returns:
-            LoyaltyObject data ready for Google API or JWT
+            GenericObject data ready for Google API or JWT
         """
         customer_id = customer.get("id", "")
         object_id = self.generate_object_id(customer_id)
 
         total_stamps = design.get("total_stamps", 10)
         stamps = customer.get("stamps", 0)
+        business_name = design.get("organization_name", "Loyalty Program")
+        card_description = design.get("description", "Loyalty Card")
+
+        # Use provided business_id or extract from design
+        biz_id = business_id or design.get("business_id", "")
 
         object_data = {
             "id": object_id,
             "classId": class_id,
             "state": "ACTIVE",
-            "accountId": customer_id,
-            "accountName": customer.get("name", "Customer"),
-            "loyaltyPoints": {
-                "balance": {
-                    "int": stamps
-                },
-                "label": "Stamps",
-                "localizedLabel": {
-                    "defaultValue": {
-                        "language": "en",
-                        "value": "Stamps"
-                    }
+            "genericType": "GENERIC_TYPE_UNSPECIFIED",
+            # Required: cardTitle (business name, shown at top)
+            "cardTitle": {
+                "defaultValue": {
+                    "language": "en",
+                    "value": business_name
                 }
             },
+            # Required: header (pass title)
+            "header": {
+                "defaultValue": {
+                    "language": "en",
+                    "value": card_description
+                }
+            },
+            # Subheader for stamp progress
+            "subheader": {
+                "defaultValue": {
+                    "language": "en",
+                    "value": f"{stamps} / {total_stamps} stamps"
+                }
+            },
+            # Background color
+            "hexBackgroundColor": rgb_to_hex(design.get("background_color")),
+            # QR code barcode
             "barcode": {
                 "type": "QR_CODE",
                 "value": customer_id,
                 "alternateText": customer_id[:8] if customer_id else ""
             },
+            # Grouping
             "groupingInfo": {
-                "groupingId": class_id  # Group all passes from same business
+                "groupingId": class_id
             }
         }
+
+        # Add logo if available
+        logo_url = design.get("logo_path")
+        if logo_url:
+            object_data["logo"] = {
+                "sourceUri": {
+                    "uri": logo_url
+                },
+                "contentDescription": {
+                    "defaultValue": {
+                        "language": "en",
+                        "value": business_name
+                    }
+                }
+            }
+
+        # Add per-customer hero image showing stamp progress
+        if biz_id:
+            hero_image_url = f"{self.base_url}/google-wallet/hero/{biz_id}?stamps={stamps}&v={int(time.time())}"
+            object_data["heroImage"] = {
+                "sourceUri": {
+                    "uri": hero_image_url
+                },
+                "contentDescription": {
+                    "defaultValue": {
+                        "language": "en",
+                        "value": f"{stamps} of {total_stamps} stamps collected"
+                    }
+                }
+            }
 
         # Add text modules for stamp progress
         object_data["textModulesData"] = [
             {
+                "id": "progress",
                 "header": "Progress",
-                "body": f"{stamps} / {total_stamps} stamps",
-                "id": "progress"
+                "body": f"{stamps} / {total_stamps} stamps"
             }
         ]
+
+        # Add reward fields from design
+        secondary_fields = design.get("secondary_fields", [])
+        for field in secondary_fields:
+            if field.get("label") and field.get("value"):
+                object_data["textModulesData"].append({
+                    "id": f"field_{len(object_data['textModulesData'])}",
+                    "header": field["label"],
+                    "body": field["value"]
+                })
 
         # Add congratulations message if reward earned
         if stamps >= total_stamps:

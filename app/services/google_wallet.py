@@ -1,6 +1,6 @@
 """
-Google Wallet API client for loyalty pass management.
-Handles LoyaltyClass and LoyaltyObject operations.
+Google Wallet API client for Generic pass management.
+Handles GenericClass and GenericObject operations.
 """
 
 import time
@@ -23,7 +23,7 @@ class GoogleWalletConfig:
 
 
 class GoogleWalletClient:
-    """Google Wallet API client for Loyalty passes."""
+    """Google Wallet API client for Generic passes."""
 
     BASE_URL = "https://walletobjects.googleapis.com/walletobjects/v1"
     SCOPES = ["https://www.googleapis.com/auth/wallet_object.issuer"]
@@ -49,45 +49,28 @@ class GoogleWalletClient:
             self._session = AuthorizedSession(credentials)
         return self._session
 
-    # === LoyaltyClass Operations ===
+    # === GenericClass Operations ===
 
-    def create_loyalty_class(self, class_id: str, class_data: dict) -> dict:
+    def create_generic_class(self, class_id: str, class_data: dict) -> dict:
         """
-        Create a new LoyaltyClass (one per business).
+        Create a new GenericClass (one per business).
 
         Args:
             class_id: Unique ID in format "issuer_id.business_id"
-            class_data: Class configuration including issuerName, programName, etc.
+            class_data: Class configuration
 
         Returns:
             Created class data from Google
         """
         session = self._get_session()
-        url = f"{self.BASE_URL}/loyaltyClass"
+        url = f"{self.BASE_URL}/genericClass"
 
         payload = {
             "id": class_id,
-            "issuerName": class_data.get("issuer_name", "Loyalty Program"),
-            "programName": class_data.get("program_name", "Loyalty Card"),
             "reviewStatus": "UNDER_REVIEW",
         }
 
-        # Add optional fields
-        if class_data.get("hex_background_color"):
-            payload["hexBackgroundColor"] = class_data["hex_background_color"]
-
-        if class_data.get("program_logo"):
-            payload["programLogo"] = class_data["program_logo"]
-
-        if class_data.get("hero_image"):
-            payload["heroImage"] = class_data["hero_image"]
-
-        if class_data.get("info_module_data"):
-            payload["infoModuleData"] = class_data["info_module_data"]
-
-        if class_data.get("text_modules_data"):
-            payload["textModulesData"] = class_data["text_modules_data"]
-
+        # Add links module for website
         if class_data.get("links_module_data"):
             payload["linksModuleData"] = class_data["links_module_data"]
 
@@ -102,14 +85,14 @@ class GoogleWalletClient:
         if response.status_code == 409:
             # Class already exists - update instead
             print(f"Class {class_id} already exists, updating...")
-            return self.update_loyalty_class(class_id, class_data)
+            return self.update_generic_class(class_id, class_data)
 
         response.raise_for_status()
         return response.json()
 
-    def update_loyalty_class(self, class_id: str, class_data: dict) -> dict:
+    def update_generic_class(self, class_id: str, class_data: dict) -> dict:
         """
-        Update an existing LoyaltyClass (propagates to all objects).
+        Update an existing GenericClass.
 
         Args:
             class_id: The class ID to update
@@ -119,78 +102,70 @@ class GoogleWalletClient:
             Updated class data from Google
         """
         session = self._get_session()
-        url = f"{self.BASE_URL}/loyaltyClass/{class_id}"
+        url = f"{self.BASE_URL}/genericClass/{class_id}"
 
         # Build patch payload with only provided fields
         payload = {}
 
-        if class_data.get("issuer_name"):
-            payload["issuerName"] = class_data["issuer_name"]
-
-        if class_data.get("program_name"):
-            payload["programName"] = class_data["program_name"]
-
-        if class_data.get("hex_background_color"):
-            payload["hexBackgroundColor"] = class_data["hex_background_color"]
-
-        if class_data.get("program_logo"):
-            payload["programLogo"] = class_data["program_logo"]
-
-        if class_data.get("hero_image"):
-            payload["heroImage"] = class_data["hero_image"]
-
-        if class_data.get("info_module_data"):
-            payload["infoModuleData"] = class_data["info_module_data"]
-
-        if class_data.get("text_modules_data"):
-            payload["textModulesData"] = class_data["text_modules_data"]
+        if class_data.get("links_module_data"):
+            payload["linksModuleData"] = class_data["links_module_data"]
 
         response = session.patch(url, json=payload)
         response.raise_for_status()
         return response.json()
 
-    def get_loyalty_class(self, class_id: str) -> Optional[dict]:
+    def get_generic_class(self, class_id: str) -> Optional[dict]:
         """
-        Get a LoyaltyClass by ID.
+        Get a GenericClass by ID.
 
         Returns:
             Class data if found, None if not found
         """
         session = self._get_session()
-        url = f"{self.BASE_URL}/loyaltyClass/{class_id}"
+        url = f"{self.BASE_URL}/genericClass/{class_id}"
 
         response = session.get(url)
-        if response.status_code == 404:
+        # Google returns 404 or 400 when class doesn't exist
+        if response.status_code in (404, 400):
             return None
         response.raise_for_status()
         return response.json()
 
-    # === LoyaltyObject Operations ===
+    # === GenericObject Operations ===
 
-    def create_loyalty_object(self, object_id: str, class_id: str, object_data: dict) -> dict:
+    def create_generic_object(self, object_id: str, class_id: str, object_data: dict) -> dict:
         """
-        Create a new LoyaltyObject (one per customer).
+        Create a new GenericObject (one per customer).
 
         Args:
             object_id: Unique ID in format "issuer_id.customer_id"
             class_id: The parent class ID
-            object_data: Object configuration including stamps, barcode, etc.
+            object_data: Object configuration
 
         Returns:
             Created object data from Google
         """
         session = self._get_session()
-        url = f"{self.BASE_URL}/loyaltyObject"
+        url = f"{self.BASE_URL}/genericObject"
 
         payload = {
             "id": object_id,
             "classId": class_id,
             "state": "ACTIVE",
-            "loyaltyPoints": {
-                "balance": {
-                    "int": object_data.get("stamps", 0)
-                },
-                "label": "Stamps"
+            "genericType": "GENERIC_TYPE_UNSPECIFIED",
+            # Required: cardTitle (business name)
+            "cardTitle": {
+                "defaultValue": {
+                    "language": "en",
+                    "value": object_data.get("business_name", "Loyalty Card")
+                }
+            },
+            # Required: header (pass title)
+            "header": {
+                "defaultValue": {
+                    "language": "en",
+                    "value": object_data.get("card_title", "Stamp Card")
+                }
             },
             "barcode": {
                 "type": "QR_CODE",
@@ -198,15 +173,30 @@ class GoogleWalletClient:
                 "alternateText": object_data.get("customer_id", "")[:8]
             },
             "groupingInfo": {
-                "groupingId": class_id  # Group all passes from same business
+                "groupingId": class_id
             }
         }
 
-        # Add account info if available
-        if object_data.get("account_name"):
-            payload["accountName"] = object_data["account_name"]
-        if object_data.get("account_id"):
-            payload["accountId"] = object_data["account_id"]
+        # Subheader for stamp progress
+        if object_data.get("subheader"):
+            payload["subheader"] = {
+                "defaultValue": {
+                    "language": "en",
+                    "value": object_data["subheader"]
+                }
+            }
+
+        # Background color
+        if object_data.get("hex_background_color"):
+            payload["hexBackgroundColor"] = object_data["hex_background_color"]
+
+        # Logo
+        if object_data.get("logo"):
+            payload["logo"] = object_data["logo"]
+
+        # Hero image (per-customer!)
+        if object_data.get("hero_image"):
+            payload["heroImage"] = object_data["hero_image"]
 
         # Add text modules for additional info
         if object_data.get("text_modules_data"):
@@ -221,19 +211,19 @@ class GoogleWalletClient:
         if response.status_code == 409:
             # Object already exists - update instead
             print(f"Object {object_id} already exists, updating...")
-            return self.update_loyalty_object(object_id, object_data)
+            return self.update_generic_object(object_id, object_data)
 
         response.raise_for_status()
         return response.json()
 
-    def update_loyalty_object(
+    def update_generic_object(
         self,
         object_id: str,
         object_data: dict,
         notify: bool = False
     ) -> dict:
         """
-        Update a LoyaltyObject (specific customer's pass).
+        Update a GenericObject (specific customer's pass).
 
         Args:
             object_id: The object ID to update
@@ -242,6 +232,100 @@ class GoogleWalletClient:
 
         Returns:
             Updated object data from Google
+        """
+        session = self._get_session()
+        url = f"{self.BASE_URL}/genericObject/{object_id}"
+
+        payload = {}
+
+        # Update subheader with stamp progress
+        if object_data.get("subheader"):
+            payload["subheader"] = {
+                "defaultValue": {
+                    "language": "en",
+                    "value": object_data["subheader"]
+                }
+            }
+
+        if object_data.get("text_modules_data"):
+            payload["textModulesData"] = object_data["text_modules_data"]
+
+        if object_data.get("messages"):
+            payload["messages"] = object_data["messages"]
+
+        if object_data.get("state"):
+            payload["state"] = object_data["state"]
+
+        # Per-customer hero image
+        if object_data.get("hero_image"):
+            payload["heroImage"] = object_data["hero_image"]
+
+        # Notification via messages
+        if notify and object_data.get("notification_message"):
+            if "messages" not in payload:
+                payload["messages"] = []
+            payload["messages"].append({
+                "header": "Update",
+                "body": object_data["notification_message"],
+                "id": f"notify_{int(time.time())}",
+                "messageType": "TEXT_AND_NOTIFY"
+            })
+
+        print(f"Google Wallet API: PATCH {url}")
+        print(f"Google Wallet API: Payload = {payload}")
+
+        response = session.patch(url, json=payload)
+        print(f"Google Wallet API: Response status = {response.status_code}")
+
+        # Log error details if request failed
+        if response.status_code >= 400:
+            error_text = response.text
+            print(f"Google Wallet API: Error response = {error_text}")
+            # Raise with the full error response included so callers can handle specific errors
+            raise Exception(f"Google Wallet API error ({response.status_code}): {error_text}")
+
+        return response.json()
+
+    # === Delete Operations ===
+
+    def delete_object(self, object_id: str, object_type: str = "generic") -> bool:
+        """
+        Delete a wallet object (generic or loyalty).
+
+        Args:
+            object_id: The object ID to delete
+            object_type: "generic" or "loyalty"
+
+        Returns:
+            True if deleted, False if not found
+        """
+        session = self._get_session()
+        endpoint = "genericObject" if object_type == "generic" else "loyaltyObject"
+        url = f"{self.BASE_URL}/{endpoint}/{object_id}"
+
+        print(f"Google Wallet API: DELETE {url}")
+        response = session.delete(url)
+        print(f"Google Wallet API: Response status = {response.status_code}")
+
+        if response.status_code == 404:
+            return False
+        if response.status_code >= 400:
+            print(f"Google Wallet API: Error response = {response.text}")
+        response.raise_for_status()
+        return True
+
+    # === Legacy LoyaltyObject Support ===
+
+    def update_loyalty_object(
+        self,
+        object_id: str,
+        object_data: dict,
+        notify: bool = False
+    ) -> dict:
+        """
+        Update a legacy LoyaltyObject (for backwards compatibility).
+
+        Used for passes that were created before migration to Generic passes.
         """
         session = self._get_session()
         url = f"{self.BASE_URL}/loyaltyObject/{object_id}"
@@ -253,7 +337,6 @@ class GoogleWalletClient:
                 "balance": {"int": object_data["stamps"]},
                 "label": "Stamps"
             }
-            # Add notification preference if requested
             if notify:
                 payload["loyaltyPoints"]["balance"]["notifyPreference"] = "NOTIFY_ON_UPDATE"
 
@@ -263,25 +346,31 @@ class GoogleWalletClient:
         if object_data.get("messages"):
             payload["messages"] = object_data["messages"]
 
-        if object_data.get("state"):
-            payload["state"] = object_data["state"]
+        print(f"Google Wallet API (legacy): PATCH {url}")
+        print(f"Google Wallet API (legacy): Payload = {payload}")
 
         response = session.patch(url, json=payload)
+        print(f"Google Wallet API (legacy): Response status = {response.status_code}")
+
+        if response.status_code >= 400:
+            print(f"Google Wallet API (legacy): Error response = {response.text}")
+
         response.raise_for_status()
         return response.json()
 
-    def get_loyalty_object(self, object_id: str) -> Optional[dict]:
+    def get_generic_object(self, object_id: str) -> Optional[dict]:
         """
-        Get a LoyaltyObject by ID.
+        Get a GenericObject by ID.
 
         Returns:
             Object data if found, None if not found
         """
         session = self._get_session()
-        url = f"{self.BASE_URL}/loyaltyObject/{object_id}"
+        url = f"{self.BASE_URL}/genericObject/{object_id}"
 
         response = session.get(url)
-        if response.status_code == 404:
+        # Google returns 404 or 400 when object doesn't exist
+        if response.status_code in (404, 400):
             return None
         response.raise_for_status()
         return response.json()
@@ -295,7 +384,7 @@ class GoogleWalletClient:
         notify: bool = True
     ) -> dict:
         """
-        Add a message to a LoyaltyObject (appears on pass back).
+        Add a message to a GenericObject (appears on pass back).
 
         Args:
             object_id: The object ID
@@ -308,7 +397,7 @@ class GoogleWalletClient:
             Updated object data
         """
         session = self._get_session()
-        url = f"{self.BASE_URL}/loyaltyObject/{object_id}/addMessage"
+        url = f"{self.BASE_URL}/genericObject/{object_id}/addMessage"
 
         payload = {
             "message": {
@@ -337,8 +426,8 @@ class GoogleWalletClient:
         creation on-the-fly when the user saves to their wallet.
 
         Args:
-            object_data: The LoyaltyObject to embed in the JWT
-            class_data: Optional LoyaltyClass to embed (for first-time creation)
+            object_data: The GenericObject to embed in the JWT
+            class_data: Optional GenericClass to embed (for first-time creation)
 
         Returns:
             Signed JWT string
@@ -351,14 +440,14 @@ class GoogleWalletClient:
             "origins": self.config.origins,
             "typ": "savetowallet",
             "payload": {
-                "loyaltyObjects": [object_data]
+                "genericObjects": [object_data]
             },
             "iat": int(time.time()),
         }
 
         # Include class definition if provided (for first-time setup)
         if class_data:
-            claims["payload"]["loyaltyClasses"] = [class_data]
+            claims["payload"]["genericClasses"] = [class_data]
 
         # Read the private key from service account file
         with open(self.config.service_account_file, 'r') as f:

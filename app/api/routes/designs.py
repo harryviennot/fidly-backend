@@ -28,10 +28,9 @@ router = APIRouter()
 
 def sync_google_wallet_class(business_id: str, design: dict):
     """
-    Sync the Google Wallet LoyaltyClass for a business.
+    Sync the Google Wallet GenericClass for a business.
 
     Called when a design is activated or updated.
-    Class updates propagate automatically to all LoyaltyObjects.
     """
     if not is_google_wallet_configured():
         return
@@ -47,13 +46,13 @@ def sync_google_wallet_class(business_id: str, design: dict):
         class_id = pass_generator.generate_class_id(business_id)
         class_data = pass_generator.design_to_class(design, business_id, callback_url)
 
-        existing = google_client.get_loyalty_class(class_id)
+        existing = google_client.get_generic_class(class_id)
 
         if existing:
-            google_client.update_loyalty_class(class_id, class_data)
+            google_client.update_generic_class(class_id, class_data)
             print(f"Updated Google Wallet class: {class_id}")
         else:
-            google_client.create_loyalty_class(class_id, class_data)
+            google_client.create_generic_class(class_id, class_data)
             print(f"Created Google Wallet class: {class_id}")
 
         # Store in database

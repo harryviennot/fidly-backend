@@ -10,22 +10,30 @@ from app.services.apns import APNsClient
 from app.services.google_wallet import create_google_wallet_client, is_google_wallet_configured
 from app.api.deps import get_apns_client
 from app.core.permissions import require_any_access, BusinessAccessContext
+from app.api.routes.google_wallet import pre_generate_hero_image
 
 router = APIRouter()
 
 
-def update_google_wallet_passes(customer_id: str, stamps: int, max_stamps: int):
+def update_google_wallet_passes(customer_id: str, business_id: str, stamps: int, max_stamps: int):
     """
     Update Google Wallet passes for a customer.
 
     Handles notification rate limiting (3 per 24h per pass).
     This is synchronous as the Google Wallet API client uses blocking HTTP.
     """
+    import time
+    from app.core.config import settings
+
     if not is_google_wallet_configured():
+        print(f"Google Wallet: Not configured, skipping update for {customer_id}")
         return
 
     google_object_ids = DeviceRepository.get_google_registrations(customer_id)
+    print(f"Google Wallet: customer={customer_id}, stamps={stamps}, registrations={google_object_ids}")
+
     if not google_object_ids:
+        print(f"Google Wallet: No registrations found for {customer_id}")
         return
 
     try:
@@ -35,14 +43,90 @@ def update_google_wallet_passes(customer_id: str, stamps: int, max_stamps: int):
         should_notify = GoogleNotificationRepository.should_notify(
             customer_id, stamps, max_stamps
         )
+        print(f"Google Wallet: should_notify={should_notify}")
+
+        # Pre-generate and cache the hero image BEFORE sending update to Google
+        # This ensures the image is ready when Google fetches it
+        print(f"Google Wallet: Pre-generating hero image for business={business_id}, stamps={stamps}")
+        pre_generate_hero_image(business_id, stamps)
+
+        # Generate hero image URL with cache busting timestamp
+        hero_url = f"{settings.base_url}/google-wallet/hero/{business_id}?stamps={stamps}&v={int(time.time())}"
 
         for object_id in google_object_ids:
             try:
-                google_client.update_loyalty_object(
-                    object_id,
-                    {"stamps": stamps},
-                    notify=should_notify
-                )
+                print(f"Google Wallet: Updating object {object_id} with stamps={stamps}")
+
+                # Build update data for GenericObject
+                update_data = {
+                    "subheader": f"{stamps} / {max_stamps} stamps",
+                    "text_modules_data": [
+                        {
+                            "id": "progress",
+                            "header": "Progress",
+                            "body": f"{stamps} / {max_stamps} stamps"
+                        }
+                    ],
+                    # Per-customer hero image showing their stamp progress
+                    "hero_image": {
+                        "sourceUri": {
+                            "uri": hero_url
+                        },
+                        "contentDescription": {
+                            "defaultValue": {
+                                "language": "en",
+                                "value": f"{stamps} of {max_stamps} stamps collected"
+                            }
+                        }
+                    }
+                }
+
+                # Add reward message if earned
+                if stamps >= max_stamps:
+                    update_data["messages"] = [
+                        {
+                            "header": "Congratulations!",
+                            "body": "You've earned a reward! Show this to redeem.",
+                            "id": "reward_ready"
+                        }
+                    ]
+
+                try:
+                    result = google_client.update_generic_object(
+                        object_id,
+                        update_data,
+                        notify=should_notify
+                    )
+                    print(f"Google Wallet: Update successful for {object_id}")
+                except Exception as update_error:
+                    error_msg = str(update_error)
+
+                    # If object is a legacy loyaltyObject, use legacy update
+                    if "object type is not genericObject" in error_msg and "loyaltyObject" in error_msg:
+                        print("Google Wallet: Legacy loyaltyObject detected, using legacy update...")
+                        # Convert to legacy format (no heroImage at object level for loyalty)
+                        legacy_data = {
+                            "stamps": stamps,
+                            "text_modules_data": update_data.get("text_modules_data", [])
+                        }
+                        result = google_client.update_loyalty_object(
+                            object_id,
+                            legacy_data,
+                            notify=should_notify
+                        )
+                        print(f"Google Wallet: Legacy update successful for {object_id}")
+                    # If hero image fails, retry without it
+                    elif "Image cannot be loaded" in error_msg:
+                        print("Google Wallet: Hero image failed, retrying without it...")
+                        del update_data["hero_image"]
+                        result = google_client.update_generic_object(
+                            object_id,
+                            update_data,
+                            notify=should_notify
+                        )
+                        print(f"Google Wallet: Update successful (without hero) for {object_id}")
+                    else:
+                        raise update_error
 
                 # Record notification if we sent one
                 if should_notify:
@@ -52,7 +136,7 @@ def update_google_wallet_passes(customer_id: str, stamps: int, max_stamps: int):
                     )
 
             except Exception as e:
-                print(f"Failed to update Google Wallet object {object_id}: {e}")
+                print(f"Google Wallet: Failed to update object {object_id}: {e}")
 
     except Exception as e:
         print(f"Failed to create Google Wallet client: {e}")
@@ -105,7 +189,7 @@ async def add_customer_stamp(
         await apns_client.send_to_all_devices(push_tokens)
 
     # Update Google Wallet passes
-    update_google_wallet_passes(customer_id, new_stamps, max_stamps)
+    update_google_wallet_passes(customer_id, ctx.business_id, new_stamps, max_stamps)
 
     message = "Stamp added!"
     if new_stamps == max_stamps:
@@ -166,7 +250,7 @@ async def redeem_customer_reward(
         await apns_client.send_to_all_devices(push_tokens)
 
     # Update Google Wallet passes (stamps reset to 0)
-    update_google_wallet_passes(customer_id, 0, max_stamps)
+    update_google_wallet_passes(customer_id, ctx.business_id, 0, max_stamps)
 
     return StampResponse(
         customer_id=customer_id,

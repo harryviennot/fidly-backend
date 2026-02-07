@@ -73,13 +73,28 @@ class DeviceRepository:
         Updates are made directly via the Google Wallet API.
         """
         db = get_db()
-        db.table("push_registrations").upsert({
+
+        # Check if registration already exists
+        # Note: We can't use upsert with on_conflict because the unique index
+        # is a partial index (with WHERE clause), which Supabase doesn't support
+        existing = db.table("push_registrations").select("id").eq(
+            "customer_id", customer_id
+        ).eq("google_object_id", google_object_id).eq(
+            "wallet_type", "google"
+        ).limit(1).execute()
+
+        if existing.data:
+            # Already registered, nothing to do
+            return
+
+        # Insert new registration
+        db.table("push_registrations").insert({
             "customer_id": customer_id,
             "wallet_type": "google",
             "google_object_id": google_object_id,
             "device_library_id": None,
             "push_token": None,
-        }, on_conflict="customer_id,google_object_id").execute()
+        }).execute()
 
     @staticmethod
     @with_retry()
@@ -91,6 +106,15 @@ class DeviceRepository:
         ).eq("google_object_id", google_object_id).eq(
             "wallet_type", "google"
         ).execute()
+
+    @staticmethod
+    @with_retry()
+    def unregister_google_by_object_id(google_object_id: str):
+        """Unregister a Google Wallet pass by object ID only."""
+        db = get_db()
+        db.table("push_registrations").delete().eq(
+            "google_object_id", google_object_id
+        ).eq("wallet_type", "google").execute()
 
     @staticmethod
     @with_retry()
