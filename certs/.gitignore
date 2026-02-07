@@ -6,3 +6,6 @@ demo/*
 
 demo/signer_cert.pem
 demo/signer_key.pem
+
+google-wallet-key.json
+
