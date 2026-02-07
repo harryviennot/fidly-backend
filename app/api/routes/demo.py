@@ -18,6 +18,7 @@ from app.repositories.demo import (
 )
 from app.services.demo_pass_generator import create_demo_pass_generator
 from app.services.apns import APNsClient, create_demo_apns_client
+from app.services.demo_events import register_session, unregister_session, push_update
 from app.core.security import verify_auth_token
 
 
@@ -78,41 +79,29 @@ async def session_events(session_token: str, request: Request):
         raise HTTPException(status_code=404, detail="Session not found")
 
     async def event_stream():
-        last_status = None
-        last_stamps = -1
+        queue = register_session(session_token)
+        try:
+            # Send initial state immediately
+            data = json.dumps({
+                "status": session["status"],
+                "stamps": session["stamps"],
+            })
+            yield f"data: {data}\n\n"
 
-        while True:
-            # Check if client disconnected
-            if await request.is_disconnected():
-                break
-
-            session = DemoSessionRepository.get_by_token(session_token)
-            if not session:
-                yield f"event: expired\ndata: {{}}\n\n"
-                break
-
-            # Check if expired
-            expires_at = session.get("expires_at")
-            if expires_at:
-                if isinstance(expires_at, str):
-                    exp_dt = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
-                else:
-                    exp_dt = expires_at
-                if exp_dt < datetime.now(timezone.utc):
-                    yield f"event: expired\ndata: {{}}\n\n"
+            while True:
+                # Check if client disconnected
+                if await request.is_disconnected():
                     break
 
-            # Send update if status or stamps changed
-            if session["status"] != last_status or session["stamps"] != last_stamps:
-                last_status = session["status"]
-                last_stamps = session["stamps"]
-                data = json.dumps({
-                    "status": session["status"],
-                    "stamps": session["stamps"],
-                })
-                yield f"data: {data}\n\n"
-
-            await asyncio.sleep(1)  # Poll every second
+                try:
+                    # Wait for update from queue (with timeout for keep-alive)
+                    update = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield f"data: {json.dumps(update)}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keep-alive ping to prevent proxy timeouts
+                    yield ": keepalive\n\n"
+        finally:
+            unregister_session(session_token)
 
     return StreamingResponse(
         event_stream(),
@@ -130,7 +119,7 @@ async def session_events(session_token: str, request: Request):
 # ============================================
 
 @router.get("/pass/{session_token}")
-def get_demo_pass(session_token: str):
+async def get_demo_pass(session_token: str):
     """Generate and return demo pass for phone to download."""
     session = DemoSessionRepository.get_by_token(session_token)
     if not session:
@@ -156,6 +145,10 @@ def get_demo_pass(session_token: str):
         DemoSessionRepository.update_status(
             session["id"], "pass_downloaded", customer["id"]
         )
+
+        # Push update to SSE
+        await push_update(session_token, "pass_downloaded", 0)
+
         customer_id = customer["id"]
         auth_token = customer["auth_token"]
         stamps = 0
@@ -203,6 +196,9 @@ async def add_demo_stamp(session_token: str):
 
     # Add stamp to session
     new_stamps = DemoSessionRepository.add_stamp(session["id"])
+
+    # Push update to SSE immediately
+    await push_update(session_token, "pass_installed", new_stamps)
 
     # Also update the customer record (for pass generation)
     if session.get("demo_customer_id"):
@@ -269,6 +265,9 @@ async def register_demo_device(
     session = DemoCustomerRepository.get_session(serial_number)
     if session:
         DemoSessionRepository.update_status(session["id"], "pass_installed")
+
+        # Push update to SSE immediately
+        await push_update(session["session_token"], "pass_installed", session["stamps"])
 
         # Schedule follow-up notification (5 min later)
         push_tokens = DemoDeviceRepository.get_push_tokens(serial_number)
