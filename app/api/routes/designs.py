@@ -183,12 +183,16 @@ async def update_design(
         design = existing
 
     # Check if changes affect strip appearance
+    # Only regenerate if the VALUE actually changed, not just if the field was sent
     strip_affecting_fields = {
         "background_color", "stamp_filled_color", "stamp_empty_color",
         "stamp_border_color", "total_stamps", "stamp_icon", "reward_icon",
         "icon_color"
     }
-    affects_strips = any(field in update_data for field in strip_affecting_fields)
+    affects_strips = any(
+        field in update_data and update_data[field] != existing.get(field)
+        for field in strip_affecting_fields
+    )
 
     if update_data and affects_strips:
         business = BusinessRepository.get_by_id(ctx.business_id)

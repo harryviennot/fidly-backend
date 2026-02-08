@@ -222,17 +222,24 @@ class GoogleWalletService:
                 }
             }
 
-        # Only add wideLogo if we have a valid URL
+        # Only add logo/wideLogo if we have a valid URL
+        # Google Wallet requires 'logo' to be set when 'wideLogo' is set
         logo_url = design.get("logo_path")
         if logo_url:
+            logo_content_description = {
+                "defaultValue": {
+                    "language": "en",
+                    "value": f"{business.get('name', 'Business')} logo"
+                }
+            }
+            # logo is required when wideLogo is set
+            payload["logo"] = {
+                "sourceUri": {"uri": logo_url},
+                "contentDescription": logo_content_description,
+            }
             payload["wideLogo"] = {
                 "sourceUri": {"uri": logo_url},
-                "contentDescription": {
-                    "defaultValue": {
-                        "language": "en",
-                        "value": f"{business.get('name', 'Business')} logo"
-                    }
-                }
+                "contentDescription": logo_content_description,
             }
 
         return payload
