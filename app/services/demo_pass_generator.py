@@ -131,7 +131,7 @@ class DemoPassGenerator:
             {
                 "key": "website",
                 "label": "🌐 Website",
-                "value": "www.stampeo.app"
+                "value": "stampeo.app"
             },
             {
                 "key": "contact",

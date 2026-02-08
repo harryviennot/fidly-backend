@@ -22,8 +22,9 @@ DEMO_WHITE = "#ffffff"
 DEMO_ORANGE = "#f97316"  # Accent orange
 DEMO_TOTAL_STAMPS = 8
 
-# Pre-generated hero images stored in Supabase Storage
+# Pre-generated assets stored in Supabase Storage
 DEMO_HERO_PATH = "stampeo/demo/strips/google"
+DEMO_LOGO_PATH = "stampeo/demo/logo.png"
 
 
 class DemoGoogleWalletService:
@@ -86,6 +87,10 @@ class DemoGoogleWalletService:
         # Clamp to valid range
         stamp_count = max(0, min(stamp_count, DEMO_TOTAL_STAMPS))
         return f"{settings.supabase_url}/storage/v1/object/public/businesses/{DEMO_HERO_PATH}/hero_{stamp_count}.png"
+
+    def _get_logo_url(self) -> str:
+        """Get the Stampeo demo logo URL."""
+        return f"{settings.supabase_url}/storage/v1/object/public/businesses/{DEMO_LOGO_PATH}"
 
     def _build_demo_class_payload(self) -> dict:
         """
@@ -196,8 +201,16 @@ class DemoGoogleWalletService:
             },
         ]
 
-        # Get pre-generated hero image URL
+        # Get pre-generated image URLs
         hero_url = self._get_hero_url(stamp_count)
+        logo_url = self._get_logo_url()
+
+        logo_content_description = {
+            "defaultValue": {
+                "language": "en",
+                "value": "Stampeo logo"
+            }
+        }
 
         return {
             "id": object_id,
@@ -212,6 +225,14 @@ class DemoGoogleWalletService:
                         "value": f"{stamp_count}/{DEMO_TOTAL_STAMPS} stamps"
                     }
                 }
+            },
+            "logo": {
+                "sourceUri": {"uri": logo_url},
+                "contentDescription": logo_content_description,
+            },
+            "wideLogo": {
+                "sourceUri": {"uri": logo_url},
+                "contentDescription": logo_content_description,
             },
             "cardTitle": {
                 "defaultValue": {
