@@ -4,7 +4,6 @@ import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
@@ -26,19 +25,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
 
 
-def get_cors_origins() -> list[str]:
-    """Get allowed CORS origins based on environment."""
-    env = os.getenv("ENVIRONMENT", "development")
-
-    if env == "production":
-        return [
-            "https://stampeo.app",
-            "https://app.stampeo.app",
-            "https://scanner.stampeo.app",
-        ]
-
-    # Development: allow all
-    return ["*"]
+logger = logging.getLogger(__name__)
 
 
 class DynamicCORSMiddleware(BaseHTTPMiddleware):
@@ -49,6 +36,8 @@ class DynamicCORSMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         origin = request.headers.get("origin")
         env = os.getenv("ENVIRONMENT", "development")
+
+        logger.info(f"CORS check - Origin: {origin}, Env: {env}, Method: {request.method}, Path: {request.url.path}")
 
         # Handle preflight requests
         if request.method == "OPTIONS":
@@ -61,12 +50,18 @@ class DynamicCORSMiddleware(BaseHTTPMiddleware):
             if env == "production":
                 # Allow stampeo.app and any subdomain
                 if self.STAMPEO_PATTERN.match(origin):
+                    logger.info(f"CORS allowed for origin: {origin}")
                     response.headers["Access-Control-Allow-Origin"] = origin
                     response.headers["Access-Control-Allow-Credentials"] = "true"
+                else:
+                    logger.warning(f"CORS rejected - Origin '{origin}' does not match pattern")
             else:
                 # Development: allow all origins
+                logger.info(f"CORS allowed (dev mode) for origin: {origin}")
                 response.headers["Access-Control-Allow-Origin"] = origin
                 response.headers["Access-Control-Allow-Credentials"] = "true"
+        else:
+            logger.info("No origin header present in request")
 
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
