@@ -62,8 +62,20 @@ def register_customer(business_id: str, data: CustomerPublicCreate):
     if data.email:
         existing = CustomerRepository.get_by_email(business_id, data.email)
         if existing:
-            # Customer exists - send pass via email for security
+            # Customer exists - generate wallet URLs and send via email
             pass_url = f"{settings.base_url}/passes/{existing['id']}"
+            google_wallet_url = None
+
+            # Generate both wallet URLs using PassCoordinator
+            design = CardDesignRepository.get_active(business_id)
+            if design:
+                try:
+                    coordinator = create_pass_coordinator()
+                    wallet_urls = coordinator.get_wallet_urls(existing, business, design)
+                    pass_url = wallet_urls.get("apple_url") or pass_url
+                    google_wallet_url = wallet_urls.get("google_url")
+                except Exception as e:
+                    logger.error(f"Wallet URL generation error for existing customer: {e}")
 
             try:
                 email_service = get_email_service()
@@ -72,6 +84,7 @@ def register_customer(business_id: str, data: CustomerPublicCreate):
                     customer_name=existing.get("name"),
                     business_name=business["name"],
                     pass_url=pass_url,
+                    google_wallet_url=google_wallet_url,
                 )
                 logger.info(f"Sent existing pass email to {data.email} for business {business_id}")
             except Exception as e:

@@ -106,9 +106,40 @@ class EmailService:
         customer_name: str | None,
         business_name: str,
         pass_url: str,
+        google_wallet_url: str | None = None,
     ) -> bool:
         """Send a loyalty card pass download email to a customer."""
         greeting = f"Hi {customer_name}," if customer_name else "Hi there,"
+
+        # Build wallet buttons - always show Apple, conditionally show Google
+        apple_button = f"""
+            <a href="{pass_url}"
+               style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+                      color: white;
+                      padding: 14px 28px;
+                      text-decoration: none;
+                      border-radius: 8px;
+                      font-weight: 600;
+                      display: inline-block;">
+                Add to Apple Wallet
+            </a>
+        """
+
+        google_button = ""
+        if google_wallet_url:
+            google_button = f"""
+            <a href="{google_wallet_url}"
+               style="background: #1a1a1a;
+                      color: white;
+                      padding: 14px 28px;
+                      text-decoration: none;
+                      border-radius: 8px;
+                      font-weight: 600;
+                      display: inline-block;
+                      margin-top: 12px;">
+                Add to Google Wallet
+            </a>
+            """
 
         html_content = f"""
 <!DOCTYPE html>
@@ -128,16 +159,8 @@ class EmailService:
             Add it to your wallet to start collecting stamps!
         </p>
         <div style="text-align: center; margin: 30px 0;">
-            <a href="{pass_url}"
-               style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
-                      color: white;
-                      padding: 14px 28px;
-                      text-decoration: none;
-                      border-radius: 8px;
-                      font-weight: 600;
-                      display: inline-block;">
-                Download to Apple Wallet
-            </a>
+            {apple_button}
+            {google_button}
         </div>
         <p style="font-size: 14px; color: #666;">
             Once added to your wallet, your card will automatically update when you earn stamps.
