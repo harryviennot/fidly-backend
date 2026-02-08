@@ -203,6 +203,8 @@ async def get_demo_pass(
     if device_type == 'android':
         try:
             google_service = create_demo_google_wallet_service()
+            # Ensure class exists with correct callback URL
+            google_service.ensure_class_exists()
             save_url = google_service.generate_save_url(
                 customer_id=customer_id,
                 stamp_count=stamps,

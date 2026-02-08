@@ -11,7 +11,7 @@ import httpx
 from google.auth import jwt as google_jwt
 from google.oauth2 import service_account
 
-from app.core.config import settings
+from app.core.config import settings, get_public_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,9 @@ DEMO_BLACK = "#1c1c1e"  # Stampeo black background
 DEMO_WHITE = "#ffffff"
 DEMO_ORANGE = "#f97316"  # Accent orange
 DEMO_TOTAL_STAMPS = 8
+
+# Pre-generated hero images stored in Supabase Storage
+DEMO_HERO_PATH = "stampeo/demo/strips/google"
 
 
 class DemoGoogleWalletService:
@@ -77,6 +80,12 @@ class DemoGoogleWalletService:
     def _get_object_id(self, customer_id: str) -> str:
         """Generate object ID for a demo customer."""
         return f"{self.issuer_id}.demo-{customer_id}"
+
+    def _get_hero_url(self, stamp_count: int) -> str:
+        """Get pre-generated hero image URL for a stamp count."""
+        # Clamp to valid range
+        stamp_count = max(0, min(stamp_count, DEMO_TOTAL_STAMPS))
+        return f"{settings.supabase_url}/storage/v1/object/public/businesses/{DEMO_HERO_PATH}/hero_{stamp_count}.png"
 
     def _build_demo_class_payload(self) -> dict:
         """
@@ -142,20 +151,14 @@ class DemoGoogleWalletService:
         """
         Build GenericObject payload for a demo customer.
 
-        Uses in-memory stamp visualization via textModulesData
-        rather than pre-generated hero images.
+        Uses pre-generated hero images from Supabase Storage.
         """
         class_id = self._get_class_id()
         object_id = self._get_object_id(customer_id)
 
-        # Create visual stamp progress (using emoji for now)
-        filled = stamp_count
-        empty = DEMO_TOTAL_STAMPS - stamp_count
-        stamp_visual = "🟠" * filled + "⚫" * empty
-
         # Determine reward text
         if stamp_count >= DEMO_TOTAL_STAMPS:
-            reward_text = "🎁 30 days free!"
+            reward_text = "30 days free!"
         else:
             reward_text = "30 days free trial"
 
@@ -163,7 +166,7 @@ class DemoGoogleWalletService:
             {
                 "id": "stamps",
                 "header": "STAMPS",
-                "body": f"{stamp_count} / {DEMO_TOTAL_STAMPS}  {stamp_visual}",
+                "body": f"{stamp_count} / {DEMO_TOTAL_STAMPS}",
             },
             {
                 "id": "reward",
@@ -193,11 +196,23 @@ class DemoGoogleWalletService:
             },
         ]
 
+        # Get pre-generated hero image URL
+        hero_url = self._get_hero_url(stamp_count)
+
         return {
             "id": object_id,
             "classId": class_id,
             "state": "ACTIVE",
             "textModulesData": text_modules,
+            "heroImage": {
+                "sourceUri": {"uri": hero_url},
+                "contentDescription": {
+                    "defaultValue": {
+                        "language": "en",
+                        "value": f"{stamp_count}/{DEMO_TOTAL_STAMPS} stamps"
+                    }
+                }
+            },
             "cardTitle": {
                 "defaultValue": {
                     "language": "en",
@@ -303,6 +318,61 @@ class DemoGoogleWalletService:
             "object_id": object_id,
         }
 
+    def ensure_class_exists(self) -> bool:
+        """
+        Ensure the demo class exists with correct callback URL.
+
+        Creates the class if it doesn't exist, or updates it if callback URL changed.
+        This is needed because the JWT approach doesn't update existing classes.
+
+        Returns True if successful.
+        """
+        class_id = self._get_class_id()
+        class_payload = self._build_demo_class_payload()
+
+        try:
+            # Try to get existing class
+            response = self.http_client.get(
+                f"{self.WALLET_API_BASE}/genericClass/{class_id}"
+            )
+
+            if response.status_code == 404:
+                # Class doesn't exist, create it
+                logger.info(f"[Demo Google] Creating class {class_id}")
+                create_response = self.http_client.post(
+                    f"{self.WALLET_API_BASE}/genericClass",
+                    json=class_payload,
+                )
+                if create_response.status_code not in (200, 201):
+                    logger.error(f"[Demo Google] Failed to create class: {create_response.text}")
+                    return False
+                logger.info(f"[Demo Google] Class created with callback: {self.callback_url}")
+                return True
+
+            if response.status_code == 200:
+                # Class exists, check if callback URL needs updating
+                existing = response.json()
+                existing_callback = existing.get("callbackOptions", {}).get("url", "")
+
+                if existing_callback != self.callback_url:
+                    logger.info(f"[Demo Google] Updating class callback from {existing_callback} to {self.callback_url}")
+                    update_response = self.http_client.patch(
+                        f"{self.WALLET_API_BASE}/genericClass/{class_id}",
+                        json=class_payload,
+                    )
+                    if update_response.status_code not in (200, 201):
+                        logger.error(f"[Demo Google] Failed to update class: {update_response.text}")
+                        return False
+                    logger.info("[Demo Google] Class callback updated successfully")
+                return True
+
+            logger.error(f"[Demo Google] Unexpected response: {response.status_code}")
+            return False
+
+        except Exception as e:
+            logger.error(f"[Demo Google] Error ensuring class exists: {e}")
+            return False
+
     def close(self) -> None:
         """Close HTTP client."""
         if self._http_client:
@@ -312,12 +382,13 @@ class DemoGoogleWalletService:
 
 def create_demo_google_wallet_service() -> DemoGoogleWalletService:
     """Factory function to create DemoGoogleWalletService."""
-    # Build callback URL for demo
-    callback_url = f"{settings.base_url}/demo/google-wallet/callback"
+    # Use public URL (tunnel if available, otherwise base_url)
+    public_url = get_public_base_url()
+    callback_url = f"{public_url}/demo/google-wallet/callback"
 
     return DemoGoogleWalletService(
         credentials_path=settings.google_wallet_credentials_path,
         issuer_id=settings.google_wallet_issuer_id,
-        base_url=settings.base_url,
+        base_url=public_url,
         callback_url=callback_url,
     )
