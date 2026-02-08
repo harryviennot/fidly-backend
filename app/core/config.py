@@ -4,6 +4,59 @@ from functools import lru_cache
 from pydantic_settings import BaseSettings
 
 
+def _load_doppler_secrets():
+    """Load secrets from Doppler API into environment variables.
+
+    Must run BEFORE Settings is instantiated so pydantic can read the env vars.
+    """
+    token = os.getenv("DOPPLER_TOKEN")
+    if not token:
+        return
+
+    try:
+        import requests
+        response = requests.get(
+            "https://api.doppler.com/v3/configs/config/secrets/download",
+            params={"format": "json"},
+            auth=(token, ""),
+            timeout=30,
+        )
+        response.raise_for_status()
+        secrets = response.json()
+
+        # Set all secrets as environment variables
+        for key, value in secrets.items():
+            if key not in os.environ:  # Don't override existing env vars
+                os.environ[key] = value
+
+        # Write certificate files
+        cert_dir = "/app/certs"
+        os.makedirs(cert_dir, exist_ok=True)
+
+        cert_mappings = {
+            "SIGNER_CERT_PEM": "signerCert.pem",
+            "SIGNER_KEY_PEM": "signerKey.pem",
+            "WWDR_PEM": "wwdr.pem",
+            "APNS_COMBINED_PEM": "combined.pem",
+            "GOOGLE_WALLET_KEY_JSON": "google-wallet-key.json",
+        }
+
+        for secret_name, filename in cert_mappings.items():
+            if secret_name in secrets:
+                filepath = os.path.join(cert_dir, filename)
+                with open(filepath, "w") as f:
+                    f.write(secrets[secret_name])
+                os.chmod(filepath, 0o600)
+
+        print(f"Loaded {len(secrets)} secrets from Doppler")
+    except Exception as e:
+        print(f"Warning: Failed to load Doppler secrets: {e}")
+
+
+# Load Doppler secrets into environment BEFORE Settings is instantiated
+_load_doppler_secrets()
+
+
 class Settings(BaseSettings):
     # Supabase
     supabase_url: str = ""

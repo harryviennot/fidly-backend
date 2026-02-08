@@ -33,12 +33,7 @@ else
     fi
 fi
 
-# Load Doppler secrets if token is set
-if [ -n "$DOPPLER_TOKEN" ]; then
-    echo "Loading secrets from Doppler..."
-    python -m app.core.doppler
-fi
-
+# Doppler secrets are loaded inside the app (app/core/config.py)
 echo "Starting backend with BASE_URL=$BASE_URL"
 
 # Execute the main command
