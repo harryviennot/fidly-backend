@@ -1,26 +1,35 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Depends
 
 from app.domain.schemas import StampResponse
 from app.repositories.customer import CustomerRepository
 from app.repositories.card_design import CardDesignRepository
-from app.repositories.device import DeviceRepository
+from app.repositories.business import BusinessRepository
 from app.repositories.membership import MembershipRepository
-from app.services.apns import APNsClient
-from app.api.deps import get_apns_client
+from app.services.wallets import PassCoordinator, create_pass_coordinator
 from app.core.permissions import require_any_access, BusinessAccessContext
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+
+def get_pass_coordinator() -> PassCoordinator:
+    """Dependency to get PassCoordinator."""
+    return create_pass_coordinator()
 
 
 @router.post("/{business_id}/{customer_id}", response_model=StampResponse)
 async def add_customer_stamp(
     customer_id: str,
     ctx: BusinessAccessContext = Depends(require_any_access),
-    apns_client: APNsClient = Depends(get_apns_client),
+    coordinator: PassCoordinator = Depends(get_pass_coordinator),
 ):
     """Add a stamp to a customer and trigger push notification.
 
     Requires membership in the business (any role: owner or scanner).
+    Updates both Apple Wallet and Google Wallet passes.
     """
     customer = CustomerRepository.get_by_id(customer_id)
     if not customer:
@@ -53,9 +62,23 @@ async def add_customer_stamp(
         # Don't fail the stamp operation if activity tracking fails
         pass
 
-    push_tokens = DeviceRepository.get_push_tokens(customer_id)
-    if push_tokens:
-        await apns_client.send_to_all_devices(push_tokens)
+    # Update wallets (Apple via push, Google via API update)
+    # Get business for Google Wallet updates
+    business = BusinessRepository.get_by_id(ctx.business_id)
+
+    # Update customer object with new stamp count for wallet update
+    updated_customer = {**customer, "stamps": new_stamps}
+
+    if business and design:
+        try:
+            await coordinator.on_stamp_added(
+                customer=updated_customer,
+                business=business,
+                design=design,
+            )
+        except Exception as e:
+            # Don't fail the stamp operation if wallet update fails
+            logger.error(f"[Stamps] Wallet update error: {e}", exc_info=True)
 
     message = "Stamp added!"
     if new_stamps == max_stamps:
@@ -73,11 +96,12 @@ async def add_customer_stamp(
 async def redeem_customer_reward(
     customer_id: str,
     ctx: BusinessAccessContext = Depends(require_any_access),
-    apns_client: APNsClient = Depends(get_apns_client),
+    coordinator: PassCoordinator = Depends(get_pass_coordinator),
 ):
     """Redeem a customer's reward by resetting stamps to 0.
 
     Requires membership in the business (any role: owner or scanner).
+    Updates both Apple Wallet and Google Wallet passes.
     """
     customer = CustomerRepository.get_by_id(customer_id)
     if not customer:
@@ -110,10 +134,23 @@ async def redeem_customer_reward(
         # Don't fail the redeem operation if activity tracking fails
         pass
 
-    # Trigger push notification for pass update
-    push_tokens = DeviceRepository.get_push_tokens(customer_id)
-    if push_tokens:
-        await apns_client.send_to_all_devices(push_tokens)
+    # Update wallets (Apple via push, Google via API update)
+    # Get business for Google Wallet updates
+    business = BusinessRepository.get_by_id(ctx.business_id)
+
+    # Update customer object with reset stamp count for wallet update
+    updated_customer = {**customer, "stamps": 0}
+
+    if business and design:
+        try:
+            await coordinator.on_stamp_added(
+                customer=updated_customer,
+                business=business,
+                design=design,
+            )
+        except Exception as e:
+            # Don't fail the redeem operation if wallet update fails
+            logger.error(f"[Stamps] Wallet update error on redemption: {e}", exc_info=True)
 
     return StampResponse(
         customer_id=customer_id,

@@ -4,12 +4,13 @@ Completely separate from business routes.
 """
 import asyncio
 import json
+import logging
 import time
 from datetime import datetime, timezone
 from email.utils import formatdate
 
 from fastapi import APIRouter, HTTPException, Response, Header, Body, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
 
 from app.repositories.demo import (
     DemoSessionRepository,
@@ -17,8 +18,23 @@ from app.repositories.demo import (
     DemoDeviceRepository,
 )
 from app.services.demo_pass_generator import create_demo_pass_generator
+from app.services.demo_google_wallet import create_demo_google_wallet_service
 from app.services.apns import APNsClient, create_demo_apns_client
+from app.services.demo_events import register_session, unregister_session, push_update
 from app.core.security import verify_auth_token
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+def detect_device_type(user_agent: str) -> str:
+    """Detect device type from User-Agent string."""
+    ua_lower = user_agent.lower()
+    if 'iphone' in ua_lower or 'ipad' in ua_lower or 'ipod' in ua_lower:
+        return 'ios'
+    elif 'android' in ua_lower:
+        return 'android'
+    return 'desktop'
 
 
 router = APIRouter()
@@ -78,41 +94,29 @@ async def session_events(session_token: str, request: Request):
         raise HTTPException(status_code=404, detail="Session not found")
 
     async def event_stream():
-        last_status = None
-        last_stamps = -1
+        queue = register_session(session_token)
+        try:
+            # Send initial state immediately
+            data = json.dumps({
+                "status": session["status"],
+                "stamps": session["stamps"],
+            })
+            yield f"data: {data}\n\n"
 
-        while True:
-            # Check if client disconnected
-            if await request.is_disconnected():
-                break
-
-            session = DemoSessionRepository.get_by_token(session_token)
-            if not session:
-                yield f"event: expired\ndata: {{}}\n\n"
-                break
-
-            # Check if expired
-            expires_at = session.get("expires_at")
-            if expires_at:
-                if isinstance(expires_at, str):
-                    exp_dt = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
-                else:
-                    exp_dt = expires_at
-                if exp_dt < datetime.now(timezone.utc):
-                    yield f"event: expired\ndata: {{}}\n\n"
+            while True:
+                # Check if client disconnected
+                if await request.is_disconnected():
                     break
 
-            # Send update if status or stamps changed
-            if session["status"] != last_status or session["stamps"] != last_stamps:
-                last_status = session["status"]
-                last_stamps = session["stamps"]
-                data = json.dumps({
-                    "status": session["status"],
-                    "stamps": session["stamps"],
-                })
-                yield f"data: {data}\n\n"
-
-            await asyncio.sleep(1)  # Poll every second
+                try:
+                    # Wait for update from queue (with timeout for keep-alive)
+                    update = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield f"data: {json.dumps(update)}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keep-alive ping to prevent proxy timeouts
+                    yield ": keepalive\n\n"
+        finally:
+            unregister_session(session_token)
 
     return StreamingResponse(
         event_stream(),
@@ -130,8 +134,20 @@ async def session_events(session_token: str, request: Request):
 # ============================================
 
 @router.get("/pass/{session_token}")
-def get_demo_pass(session_token: str):
-    """Generate and return demo pass for phone to download."""
+async def get_demo_pass(
+    session_token: str,
+    request: Request,
+    wallet: str | None = None,  # Optional override: 'apple' or 'google'
+):
+    """
+    Generate and return demo pass for phone to download.
+
+    Device detection:
+    - iOS devices: Serve .pkpass directly
+    - Android devices: Redirect to Google Wallet save URL
+    - Desktop browsers: Redirect to wallet selection page
+    - ?wallet=apple|google: Override device detection
+    """
     session = DemoSessionRepository.get_by_token(session_token)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found or expired")
@@ -146,16 +162,32 @@ def get_demo_pass(session_token: str):
         if exp_dt < datetime.now(timezone.utc):
             raise HTTPException(status_code=404, detail="Session expired")
 
+    # Determine device type (wallet param overrides detection)
+    if wallet in ('apple', 'google'):
+        device_type = 'ios' if wallet == 'apple' else 'android'
+    else:
+        user_agent = request.headers.get("user-agent", "")
+        device_type = detect_device_type(user_agent)
+
+    # Desktop browsers: redirect to selection page
+    if device_type == 'desktop':
+        selection_url = f"{settings.showcase_url}/demo/wallet-select/{session_token}"
+        return RedirectResponse(url=selection_url, status_code=302)
+
     # Create demo customer if doesn't exist
     if not session.get("demo_customer_id"):
         customer = DemoCustomerRepository.create(session["id"])
         if not customer:
             raise HTTPException(status_code=500, detail="Failed to create demo customer")
 
-        # Link customer to session
+        # Link customer to session (don't set wallet_provider yet - set on install)
         DemoSessionRepository.update_status(
             session["id"], "pass_downloaded", customer["id"]
         )
+
+        # Push update to SSE
+        await push_update(session_token, "pass_downloaded", 0)
+
         customer_id = customer["id"]
         auth_token = customer["auth_token"]
         stamps = 0
@@ -167,7 +199,25 @@ def get_demo_pass(session_token: str):
         auth_token = customer["auth_token"]
         stamps = customer["stamps"]
 
-    # Generate pass
+    # Android: redirect to Google Wallet save URL
+    if device_type == 'android':
+        try:
+            google_service = create_demo_google_wallet_service()
+            # Ensure class exists with correct callback URL
+            google_service.ensure_class_exists()
+            save_url = google_service.generate_save_url(
+                customer_id=customer_id,
+                stamp_count=stamps,
+            )
+            logger.info(f"[Demo] Redirecting to Google Wallet for {customer_id[:8]}...")
+            return RedirectResponse(url=save_url, status_code=302)
+        except Exception as e:
+            logger.error(f"[Demo] Google Wallet error: {e}")
+            # Fall back to selection page on error
+            selection_url = f"{settings.showcase_url}/demo/wallet-select/{session_token}"
+            return RedirectResponse(url=selection_url, status_code=302)
+
+    # iOS: generate and serve Apple Wallet pass
     generator = create_demo_pass_generator()
     pass_data = generator.generate_demo_pass(
         customer_id=customer_id,
@@ -204,15 +254,33 @@ async def add_demo_stamp(session_token: str):
     # Add stamp to session
     new_stamps = DemoSessionRepository.add_stamp(session["id"])
 
+    # Push update to SSE immediately
+    await push_update(session_token, "pass_installed", new_stamps)
+
     # Also update the customer record (for pass generation)
     if session.get("demo_customer_id"):
         DemoCustomerRepository.add_stamp(session["demo_customer_id"])
 
-        # Send push notification to update the pass
-        push_tokens = DemoDeviceRepository.get_push_tokens(session["demo_customer_id"])
-        if push_tokens:
-            apns_client = create_demo_apns_client()
-            await apns_client.send_to_all_devices(push_tokens)
+        # Determine which wallet to update based on provider
+        wallet_provider = session.get("wallet_provider")
+
+        if wallet_provider == "google":
+            # Update Google Wallet object via API
+            try:
+                google_service = create_demo_google_wallet_service()
+                google_service.update_demo_object(
+                    customer_id=session["demo_customer_id"],
+                    stamp_count=new_stamps,
+                )
+                logger.info(f"[Demo] Updated Google Wallet for {session['demo_customer_id'][:8]}...")
+            except Exception as e:
+                logger.error(f"[Demo] Google Wallet update error: {e}")
+        else:
+            # Default to Apple: send push notification to update the pass
+            push_tokens = DemoDeviceRepository.get_push_tokens(session["demo_customer_id"])
+            if push_tokens:
+                apns_client = create_demo_apns_client()
+                await apns_client.send_to_all_devices(push_tokens)
 
     return {"stamps": new_stamps, "message": "Stamp added!"}
 
@@ -265,10 +333,15 @@ async def register_demo_device(
     # Register device
     DemoDeviceRepository.register(serial_number, device_library_id, push_token)
 
-    # Update session status to "pass_installed"
+    # Update session status to "pass_installed" with Apple as provider
     session = DemoCustomerRepository.get_session(serial_number)
     if session:
-        DemoSessionRepository.update_status(session["id"], "pass_installed")
+        DemoSessionRepository.update_status(
+            session["id"], "pass_installed", wallet_provider="apple"
+        )
+
+        # Push update to SSE immediately
+        await push_update(session["session_token"], "pass_installed", session["stamps"])
 
         # Schedule follow-up notification (5 min later)
         push_tokens = DemoDeviceRepository.get_push_tokens(serial_number)
@@ -375,3 +448,68 @@ def receive_demo_logs(body: dict = Body(...)):
     for log in logs:
         print(f"Demo wallet log: {log}")
     return Response(status_code=200)
+
+
+# ============================================
+# Google Wallet Callbacks (demo-specific)
+# ============================================
+
+@router.post("/google-wallet/callback")
+async def demo_google_wallet_callback(body: dict = Body(...)):
+    """
+    Handle Google Wallet callback for demo passes.
+    Updates session status when pass is saved/deleted.
+    """
+    # Parse callback data
+    callback_data = body
+    if "signedMessage" in body:
+        try:
+            callback_data = json.loads(body["signedMessage"])
+        except json.JSONDecodeError:
+            callback_data = body
+
+    event_type = callback_data.get("eventType", "")
+    object_id = callback_data.get("objectId", "")
+
+    logger.info(f"[Demo Google Callback] Event: {event_type}, Object: {object_id}")
+
+    # Extract customer_id from object_id (format: issuerId.demo-customerId)
+    customer_id = None
+    if object_id and ".demo-" in object_id:
+        customer_id = object_id.split(".demo-", 1)[1]
+
+    if not customer_id:
+        logger.warning(f"[Demo Google Callback] Could not extract customer_id from {object_id}")
+        return {"status": "ok"}
+
+    if event_type == "save":
+        # User saved pass to Google Wallet
+        DemoDeviceRepository.register_google(
+            demo_customer_id=customer_id,
+            google_object_id=object_id,
+        )
+
+        # Update session status to "pass_installed" with Google as provider
+        session = DemoCustomerRepository.get_session(customer_id)
+        if session:
+            DemoSessionRepository.update_status(
+                session["id"], "pass_installed", wallet_provider="google"
+            )
+            await push_update(session["session_token"], "pass_installed", session["stamps"])
+            logger.info(f"[Demo Google] Pass installed for customer {customer_id[:8]}...")
+
+    elif event_type == "del":
+        # User deleted pass from Google Wallet
+        DemoDeviceRepository.unregister_google(
+            demo_customer_id=customer_id,
+            google_object_id=object_id,
+        )
+        logger.info(f"[Demo Google] Pass deleted for customer {customer_id[:8]}...")
+
+    return {"status": "ok"}
+
+
+@router.get("/google-wallet/callback")
+def demo_google_wallet_callback_verify():
+    """Verification endpoint for Google Wallet callback setup."""
+    return {"status": "ok"}
