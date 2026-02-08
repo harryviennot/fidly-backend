@@ -32,6 +32,7 @@ def _load_doppler_secrets():
         # Write certificate files
         cert_dir = "/app/certs"
         os.makedirs(cert_dir, exist_ok=True)
+        os.makedirs(os.path.join(cert_dir, "demo"), exist_ok=True)
 
         cert_mappings = {
             "SIGNER_CERT_PEM": "signerCert.pem",
@@ -39,6 +40,9 @@ def _load_doppler_secrets():
             "WWDR_PEM": "wwdr.pem",
             "APNS_COMBINED_PEM": "combined.pem",
             "GOOGLE_WALLET_KEY_JSON": "google-wallet-key.json",
+            "DEMO_SIGNER_CERT_PEM": "demo/signer_cert.pem",
+            "DEMO_SIGNER_KEY_PEM": "demo/signer_key.pem",
+            "DEMO_APNS_COMBINED_PEM": "demo/apns_combined.pem",
         }
 
         for secret_name, filename in cert_mappings.items():
