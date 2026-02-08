@@ -229,8 +229,66 @@ class PassGenerator:
             with open(signature_path, "rb") as f:
                 return f.read()
 
-    def _get_asset_files(self, stamps: int = 0) -> dict[str, bytes]:
-        """Load all pass asset images and generate dynamic strip."""
+    def _get_strip_images(self, stamps: int, design_id: str | None) -> dict[str, bytes]:
+        """
+        Get strip images using cached/pre-generated strips with fallback to on-the-fly.
+
+        Priority:
+        1. Redis cache (fastest - in-memory)
+        2. Download from Supabase Storage (pre-generated URLs)
+        3. Generate on-the-fly (fallback)
+        """
+        # Try Redis cache first (if design_id available)
+        if design_id:
+            try:
+                from app.services.strip_cache import get_cached_apple_strips
+                cached = get_cached_apple_strips(design_id, stamps)
+                if cached:
+                    return cached
+            except Exception:
+                pass  # Cache unavailable, continue to next option
+
+            # Try downloading pre-generated strips from Supabase Storage
+            try:
+                from app.repositories.strip_image import StripImageRepository
+                strip_urls = StripImageRepository.get_apple_urls(design_id, stamps)
+                if strip_urls:
+                    strips = self._download_strips(strip_urls)
+                    if strips:
+                        return strips
+            except Exception:
+                pass  # Pre-generated not available, fall back to on-the-fly
+
+        # Fall back to on-the-fly generation
+        return self.strip_generator.generate_all_resolutions(stamps)
+
+    def _download_strips(self, strip_urls: dict[str, str]) -> dict[str, bytes] | None:
+        """Download pre-generated strip images from URLs."""
+        # Map resolution names to filenames
+        resolution_to_filename = {
+            "1x": "strip.png",
+            "2x": "strip@2x.png",
+            "3x": "strip@3x.png",
+        }
+
+        result = {}
+        for resolution, url in strip_urls.items():
+            filename = resolution_to_filename.get(resolution)
+            if not filename:
+                continue
+            data = _download_from_url(url)
+            if data is None:
+                # If any download fails, return None to trigger fallback
+                return None
+            result[filename] = data
+
+        # Only return if we got all resolutions
+        if len(result) == 3:
+            return result
+        return None
+
+    def _get_asset_files(self, stamps: int = 0, design_id: str | None = None) -> dict[str, bytes]:
+        """Load all pass asset images and get strip images."""
         files = {}
 
         # Load icon files from default assets
@@ -258,8 +316,8 @@ class PassGenerator:
                     with open(filepath, "rb") as f:
                         files[filename] = f.read()
 
-        # Generate dynamic strip images based on stamp count
-        strip_images = self.strip_generator.generate_all_resolutions(stamps)
+        # Get strip images (cached, pre-generated, or on-the-fly)
+        strip_images = self._get_strip_images(stamps, design_id)
         files.update(strip_images)
 
         return files
@@ -285,8 +343,11 @@ class PassGenerator:
                     assets_dir=self.assets_dir,
                 )
 
-        # Start with asset files (includes dynamic strip based on stamps)
-        files = self._get_asset_files(stamps=stamps)
+        # Get design_id for cached/pre-generated strip lookup
+        design_id = self.design.get("id") if self.design else None
+
+        # Start with asset files (uses cached/pre-generated strips when available)
+        files = self._get_asset_files(stamps=stamps, design_id=design_id)
 
         # Add pass.json
         pass_json = self._create_pass_json(customer_id, name, stamps, auth_token)

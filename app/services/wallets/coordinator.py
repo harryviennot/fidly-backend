@@ -230,9 +230,31 @@ class PassCoordinator:
         # Regenerate strip images if needed
         if regenerate_strips:
             try:
+                # Invalidate old cache before regenerating
+                try:
+                    from app.services.strip_cache import invalidate_design_cache
+                    invalidate_design_cache(design["id"])
+                except Exception:
+                    pass  # Cache not available
+
                 self.strips.delete_strips_for_design(design["id"])
-                self.strips.pregenerate_all_strips(design, business_id)
+                strip_result = self.strips.pregenerate_all_strips(design, business_id)
                 results["strips_regenerated"] = True
+
+                # Cache the new image bytes and URLs for fast pass generation
+                try:
+                    from app.services.strip_cache import cache_strip_images, cache_google_urls
+                    apple_images = strip_result.get("apple_images", {})
+                    if apple_images:
+                        cache_strip_images(design["id"], apple_images)
+                        results["strips_cached"] = True
+
+                    # Cache Google URLs (convert list to {stamp_count: url})
+                    google_url_list = strip_result.get("urls", {}).get("google", [])
+                    if google_url_list:
+                        cache_google_urls(design["id"], dict(enumerate(google_url_list)))
+                except Exception as e:
+                    logger.warning(f"Failed to cache strip images: {e}")
             except Exception as e:
                 print(f"Strip regeneration error: {e}")
 
@@ -335,7 +357,23 @@ class PassCoordinator:
         Returns:
             Dict with generated strip URLs
         """
-        return self.strips.pregenerate_all_strips(design, business_id)
+        result = self.strips.pregenerate_all_strips(design, business_id)
+
+        # Cache the image bytes and URLs for fast pass generation
+        try:
+            from app.services.strip_cache import cache_strip_images, cache_google_urls
+            apple_images = result.get("apple_images", {})
+            if apple_images:
+                cache_strip_images(design["id"], apple_images)
+
+            # Cache Google URLs
+            google_url_list = result.get("urls", {}).get("google", [])
+            if google_url_list:
+                cache_google_urls(design["id"], dict(enumerate(google_url_list)))
+        except Exception as e:
+            logger.warning(f"Failed to cache strip images: {e}")
+
+        return result.get("urls", result)
 
 
 def create_pass_coordinator() -> PassCoordinator:

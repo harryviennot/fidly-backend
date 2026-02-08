@@ -220,6 +220,7 @@ class CardDesignResponse(BaseModel):
     id: str
     name: str
     is_active: bool
+    strip_status: str = "ready"  # 'ready' or 'regenerating'
 
     organization_name: str
     description: str

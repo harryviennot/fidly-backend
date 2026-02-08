@@ -18,3 +18,5 @@ cairosvg>=2.7.0
 google-auth>=2.0.0
 google-auth-httplib2>=0.1.0
 PyJWT>=2.0.0
+
+redis>=5.0.0

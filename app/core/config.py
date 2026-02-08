@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     google_wallet_issuer_id: str = ""
     google_wallet_credentials_path: str = "certs/google-wallet-key.json"
 
+    # Redis (for strip image caching)
+    redis_url: str = "redis://localhost:6379/0"
+
     # Tunnel URL file (cloudflared writes public URL here)
     tunnel_url_file: str = "/tunnel/url"
 

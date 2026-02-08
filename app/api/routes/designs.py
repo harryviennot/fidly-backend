@@ -33,6 +33,7 @@ def _design_to_response(design: dict) -> CardDesignResponse:
         id=design["id"],
         name=design["name"],
         is_active=design["is_active"],
+        strip_status=design.get("strip_status", "ready"),
         organization_name=design["organization_name"],
         description=design["description"],
         logo_text=design.get("logo_text"),
@@ -211,11 +212,21 @@ async def update_design(
 
             background_tasks.add_task(regenerate_and_notify)
         else:
-            # Inactive design: regenerate strips synchronously
-            try:
-                coordinator.pregenerate_strips_for_design(design, ctx.business_id)
-            except Exception as e:
-                print(f"Strip regeneration error: {e}")
+            # Inactive design: regenerate in background, track status
+            # Set status to regenerating to prevent activation until complete
+            CardDesignRepository.update(design_id, strip_status="regenerating")
+
+            def regenerate_inactive():
+                try:
+                    coordinator.pregenerate_strips_for_design(design, ctx.business_id)
+                    # Mark as ready when done
+                    CardDesignRepository.update(design_id, strip_status="ready")
+                except Exception as e:
+                    print(f"Strip regeneration error: {e}")
+                    # Still mark as ready so design isn't stuck
+                    CardDesignRepository.update(design_id, strip_status="ready")
+
+            background_tasks.add_task(regenerate_inactive)
 
     return _design_to_response(design)
 
@@ -272,6 +283,13 @@ async def activate_design(
     # Verify design belongs to the business
     if design.get("business_id") != ctx.business_id:
         raise HTTPException(status_code=404, detail="Design not found")
+
+    # Prevent activation while strips are being regenerated
+    if design.get("strip_status") == "regenerating":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot activate design while strips are being regenerated. Please wait a moment."
+        )
 
     # Get business for wallet updates
     business = BusinessRepository.get_by_id(ctx.business_id)

@@ -155,7 +155,7 @@ class StripImageService:
         self,
         design: dict,
         business_id: str,
-    ) -> dict[str, list[str]]:
+    ) -> dict:
         """
         Pre-generate all strip images for a card design.
 
@@ -167,7 +167,9 @@ class StripImageService:
             business_id: Business ID for storage path
 
         Returns:
-            Dictionary with 'apple' and 'google' keys containing lists of URLs
+            Dictionary with:
+            - 'urls': {'apple': [...], 'google': [...]} - Storage URLs
+            - 'apple_images': {stamp_count: {resolution: bytes}} - For Redis caching
         """
         design_id = design["id"]
         total_stamps = design.get("total_stamps", 10)
@@ -179,7 +181,13 @@ class StripImageService:
         urls = {"apple": [], "google": []}
         records = []
 
+        # Store Apple image bytes for caching
+        # Format: {stamp_count: {resolution: bytes}}
+        apple_images: dict[int, dict[str, bytes]] = {}
+
         for stamp_count in range(total_stamps + 1):
+            apple_images[stamp_count] = {}
+
             # Generate Apple strips (all resolutions)
             apple_strips = self._generate_apple_strips(generator, stamp_count)
             for res_name, image_data in apple_strips.items():
@@ -188,6 +196,9 @@ class StripImageService:
                     resolution = "1x"
                 else:
                     resolution = res_name.replace("strip@", "").replace(".png", "")
+
+                # Store image bytes for caching
+                apple_images[stamp_count][resolution] = image_data
 
                 url = self._upload_strip(
                     business_id=business_id,
@@ -228,7 +239,10 @@ class StripImageService:
         # Batch upsert all records to database
         StripImageRepository.upsert_batch(records)
 
-        return urls
+        return {
+            "urls": urls,
+            "apple_images": apple_images,
+        }
 
     def get_strip_url(
         self,

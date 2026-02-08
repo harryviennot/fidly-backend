@@ -146,11 +146,19 @@ class GoogleWalletService:
         class_id = self._get_class_id(business["id"])
         object_id = self._get_object_id(customer["id"])
 
-        # Get pre-generated hero image URL from strip_images table
-        hero_url = StripImageRepository.get_google_hero_url(
-            design_id=design["id"],
-            stamp_count=stamp_count,
-        )
+        # Get pre-generated hero image URL (try cache first, then database)
+        hero_url = None
+        try:
+            from app.services.strip_cache import get_cached_google_url
+            hero_url = get_cached_google_url(design["id"], stamp_count)
+        except Exception:
+            pass
+
+        if not hero_url:
+            hero_url = StripImageRepository.get_google_hero_url(
+                design_id=design["id"],
+                stamp_count=stamp_count,
+            )
 
         total_stamps = design.get("total_stamps", 10)
         description = design.get("description", "Loyalty Card")
