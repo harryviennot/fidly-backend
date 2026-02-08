@@ -6,7 +6,6 @@ from app.core.security import require_auth
 from app.repositories.user import UserRepository
 from app.repositories.membership import MembershipRepository
 
-
 def get_current_user_profile(auth_payload: dict = Depends(require_auth)) -> dict:
     """Get the public user profile from auth payload.
 
@@ -26,7 +25,7 @@ def get_current_user_profile(auth_payload: dict = Depends(require_auth)) -> dict
             detail="Invalid token payload: missing sub claim"
         )
 
-    user = UserRepository.get_by_auth_id(auth_id)
+    user = UserRepository.get_by_id(auth_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -80,7 +79,6 @@ def require_business_access(role: Optional[str] = None):
         user: dict = Depends(get_current_user_profile)
     ) -> BusinessAccessContext:
         membership = MembershipRepository.get_membership(user["id"], business_id)
-
         if not membership:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

@@ -64,19 +64,20 @@ def create_invitation(
     # Check permission to invite this role
     _check_invite_permission(ctx, data.role)
 
-    # Check scanner limit if inviting a scanner
-    if data.role == "scanner":
-        business = BusinessRepository.get_by_id(business_id)
-        if business:
-            limits = get_plan_limits(business["subscription_tier"])
-            max_scanners = limits["max_scanner_accounts"]
-            if max_scanners is not None:
-                # Count existing scanners + pending scanner invitations
-                current_scanners = MembershipRepository.count_by_role(business_id, "scanner")
-                pending_scanner_invites = InvitationRepository.count_pending_by_role(business_id, "scanner")
-                total = current_scanners + pending_scanner_invites
-                if total >= max_scanners:
-                    raise LimitExceededError("scanner accounts", max_scanners, total)
+    # BYPASSED FOR MVP: Scanner limit check disabled
+    # Re-enable when implementing paid tiers
+    # if data.role == "scanner":
+    #     business = BusinessRepository.get_by_id(business_id)
+    #     if business:
+    #         limits = get_plan_limits(business["subscription_tier"])
+    #         max_scanners = limits["max_scanner_accounts"]
+    #         if max_scanners is not None:
+    #             # Count existing scanners + pending scanner invitations
+    #             current_scanners = MembershipRepository.count_by_role(business_id, "scanner")
+    #             pending_scanner_invites = InvitationRepository.count_pending_by_role(business_id, "scanner")
+    #             total = current_scanners + pending_scanner_invites
+    #             if total >= max_scanners:
+    #                 raise LimitExceededError("scanner accounts", max_scanners, total)
 
     # Normalize email
     email = data.email.lower()

@@ -3,7 +3,9 @@ from fastapi import APIRouter
 from .routes import (
     businesses,
     customers,
+    demo,
     designs,
+    google_wallet,
     health,
     invitations,
     memberships,
@@ -39,6 +41,10 @@ api_router.include_router(designs.router, prefix="/designs", tags=["designs"])
 api_router.include_router(passes.router, prefix="/passes", tags=["passes"])
 api_router.include_router(stamps.router, prefix="/stamps", tags=["stamps"])
 api_router.include_router(wallet.router, prefix="/wallet", tags=["wallet"])
+api_router.include_router(google_wallet.router, prefix="/google-wallet", tags=["google-wallet"])
 
 # Public endpoints (no auth required)
 api_router.include_router(public.router, prefix="/public", tags=["public"])
+
+# Demo endpoints (interactive landing page demo)
+api_router.include_router(demo.router, prefix="/demo", tags=["demo"])

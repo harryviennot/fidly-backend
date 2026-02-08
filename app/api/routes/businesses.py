@@ -56,7 +56,7 @@ def create_business(
         elif "onboarding" in data.logo_url:
             # Onboarding bucket URL - copy to businesses bucket
             new_logo_url = storage.copy_onboarding_logo_to_business(
-                user_id=user["auth_id"],
+                user_id=user["id"],
                 business_id=business["id"]
             )
 
@@ -113,6 +113,25 @@ def get_business(ctx: BusinessAccessContext = Depends(require_any_access)):
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
     return BusinessResponse(**business)
+
+
+@router.get("/{business_id}/signup-qr")
+def get_signup_qr_code(ctx: BusinessAccessContext = Depends(require_any_access)):
+    """Get QR code for customer signup page."""
+    from app.services.qr_generator import generate_qr_code_base64
+    from app.core.config import settings
+
+    business = BusinessRepository.get_by_id(ctx.business_id)
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    signup_url = f"{settings.showcase_url}/{business['url_slug']}"
+
+    return {
+        "qr_code": generate_qr_code_base64(signup_url),
+        "signup_url": signup_url,
+        "business_name": business["name"],
+    }
 
 
 @router.put("/{business_id}", response_model=BusinessResponse)

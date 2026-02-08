@@ -33,14 +33,6 @@ class UserRepository:
 
     @staticmethod
     @with_retry()
-    def get_by_auth_id(auth_id: str) -> dict | None:
-        """Get a user by Supabase auth ID."""
-        db = get_db()
-        result = db.table("users").select("*").eq("auth_id", auth_id).limit(1).execute()
-        return result.data[0] if result and result.data else None
-
-    @staticmethod
-    @with_retry()
     def get_all() -> list[dict]:
         """Get all users."""
         db = get_db()

@@ -621,3 +621,97 @@ class StripImageGenerator:
             "strip@2x.png": self._generate_at_scale(stamps, scale=2),
             "strip@3x.png": self._generate_at_scale(stamps, scale=3),
         }
+
+    def generate_google_hero(
+        self,
+        stamps: int,
+        width: int = 1032,
+        height: int = 336,
+    ) -> bytes:
+        """
+        Generate Google Wallet hero image at specified dimensions.
+
+        Google Wallet Generic Pass uses hero images at 1032x336 pixels.
+        This generates directly at target dimensions for optimal quality.
+
+        Args:
+            stamps: Number of filled stamps
+            width: Target width (default: 1032 for Google Wallet)
+            height: Target height (default: 336 for Google Wallet)
+
+        Returns:
+            PNG image bytes at the specified dimensions
+        """
+        # Clamp stamps to valid range
+        stamps = max(0, min(stamps, self.config.total_stamps))
+
+        # Check if we have a custom background image
+        has_custom_background = (
+            self.config.strip_background_data is not None or
+            (self.config.strip_background_path is not None and
+             Path(self.config.strip_background_path).exists())
+        )
+
+        # Create background at Google hero dimensions
+        img = self._create_background(width, height)
+        draw = ImageDraw.Draw(img)
+
+        # Calculate padding proportional to height
+        # Google hero is shorter than Apple, so scale padding accordingly
+        scale_factor = height / self.config.height  # ~0.78 for 336/432
+
+        # Determine stamp area based on background
+        if has_custom_background:
+            # With custom background: proportional padding
+            top_padding = int(24 * scale_factor)
+            bottom_padding = int(24 * scale_factor)
+            stamp_area_height = height - top_padding - bottom_padding
+            stamp_area_offset = top_padding
+        else:
+            # No custom background: use full height
+            stamp_area_height = height
+            stamp_area_offset = 0
+
+        # Scale padding proportionally
+        min_padding = int(self.config.min_padding * scale_factor)
+        side_padding = int(self.config.side_padding * scale_factor)
+
+        # Calculate circle layout for Google dimensions
+        layout = calculate_circle_layout(
+            count=self.config.total_stamps,
+            canvas_width=width,
+            canvas_height=stamp_area_height,
+            min_padding=min_padding,
+            side_padding=side_padding
+        )
+
+        # Calculate border width proportional to radius
+        border_width = max(1, int(layout.radius / 20)) if layout.radius > 0 else 1
+
+        # Draw stamps
+        for circle in layout.circles:
+            # Offset Y position to account for stamp area position
+            adjusted_circle = CirclePosition(
+                center_x=circle.center_x,
+                center_y=circle.center_y + stamp_area_offset,
+                radius=circle.radius,
+                row=circle.row,
+                index=circle.index
+            )
+
+            filled = circle.index < stamps
+            is_last = (circle.index == self.config.total_stamps - 1)
+
+            # Try custom icons first (legacy support)
+            if filled and self._custom_filled:
+                self._paste_custom_icon(img, adjusted_circle, True)
+            elif not filled and self._custom_empty:
+                self._paste_custom_icon(img, adjusted_circle, False)
+            else:
+                # Use stamp drawing with predefined icons
+                self._draw_stamp(img, draw, adjusted_circle, filled, is_last, border_width)
+
+        # Convert to PNG bytes
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG", optimize=True)
+        return buffer.getvalue()

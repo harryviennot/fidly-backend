@@ -85,3 +85,14 @@ def create_apns_client() -> APNsClient:
         pass_type_id=settings.apple_pass_type_id,
         use_sandbox=settings.apns_use_sandbox,
     )
+
+
+def create_demo_apns_client() -> APNsClient:
+    """Factory function to create APNsClient for demo passes."""
+    from app.core.config import settings
+
+    return APNsClient(
+        cert_path=settings.demo_apns_cert_path,
+        pass_type_id=settings.demo_pass_type_id,
+        use_sandbox=settings.apns_use_sandbox,
+    )

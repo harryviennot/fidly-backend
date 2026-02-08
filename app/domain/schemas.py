@@ -102,7 +102,8 @@ class CustomerResponse(BaseModel):
     name: str
     email: str
     stamps: int
-    pass_url: Optional[str] = None
+    pass_url: Optional[str] = None  # Apple Wallet pass download URL
+    google_wallet_url: Optional[str] = None  # Google Wallet save URL
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -126,7 +127,8 @@ class CustomerPublicResponse(BaseModel):
     """Response body for public customer registration."""
     status: str  # "created" | "exists_email_sent"
     customer_id: Optional[str] = None  # Only for "created"
-    pass_url: Optional[str] = None  # Only for "created"
+    pass_url: Optional[str] = None  # Only for "created" - Apple Wallet
+    google_wallet_url: Optional[str] = None  # Only for "created" - Google Wallet
     message: str  # User-friendly message
 
 
@@ -218,6 +220,7 @@ class CardDesignResponse(BaseModel):
     id: str
     name: str
     is_active: bool
+    strip_status: str = "ready"  # 'ready' or 'regenerating'
 
     organization_name: str
     description: str
