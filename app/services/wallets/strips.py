@@ -91,6 +91,7 @@ class StripImageService:
             reward_icon=design.get("reward_icon", "gift"),
             icon_color=_parse_rgb(design.get("icon_color", "#ffffff")),
             strip_background_data=strip_background_data,
+            strip_background_opacity=design.get("strip_background_opacity", 40),
         )
 
     def _download_asset(self, url: str) -> bytes | None:

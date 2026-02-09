@@ -180,6 +180,9 @@ class CardDesignCreate(BaseModel):
     reward_icon: str = "gift"
     icon_color: str = "rgb(255, 255, 255)"
 
+    # Strip background
+    strip_background_opacity: int = Field(default=40, ge=0, le=100)
+
     # Pass fields
     secondary_fields: list[PassField] = []
     auxiliary_fields: list[PassField] = []
@@ -208,6 +211,9 @@ class CardDesignUpdate(BaseModel):
     stamp_icon: Optional[str] = None
     reward_icon: Optional[str] = None
     icon_color: Optional[str] = None
+
+    # Strip background
+    strip_background_opacity: Optional[int] = Field(default=None, ge=0, le=100)
 
     # Pass fields
     secondary_fields: Optional[list[PassField]] = None
@@ -247,6 +253,7 @@ class CardDesignResponse(BaseModel):
     custom_filled_stamp_url: Optional[str] = None
     custom_empty_stamp_url: Optional[str] = None
     strip_background_url: Optional[str] = None
+    strip_background_opacity: int = 40
 
     # Pass fields
     secondary_fields: list[PassField] = []

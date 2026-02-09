@@ -52,6 +52,7 @@ def _design_to_response(design: dict) -> CardDesignResponse:
         custom_filled_stamp_url=design.get("custom_filled_stamp_path"),
         custom_empty_stamp_url=design.get("custom_empty_stamp_path"),
         strip_background_url=design.get("strip_background_path"),
+        strip_background_opacity=design.get("strip_background_opacity", 40),
         secondary_fields=design.get("secondary_fields", []),
         auxiliary_fields=design.get("auxiliary_fields", []),
         back_fields=design.get("back_fields", []),
@@ -129,6 +130,7 @@ def create_design(
         stamp_icon=data.stamp_icon,
         reward_icon=data.reward_icon,
         icon_color=data.icon_color,
+        strip_background_opacity=data.strip_background_opacity,
         secondary_fields=secondary_fields,
         auxiliary_fields=auxiliary_fields,
         back_fields=back_fields,
@@ -188,7 +190,7 @@ async def update_design(
     strip_affecting_fields = {
         "background_color", "stamp_filled_color", "stamp_empty_color",
         "stamp_border_color", "total_stamps", "stamp_icon", "reward_icon",
-        "icon_color"
+        "icon_color", "strip_background_opacity"
     }
     affects_strips = any(
         field in update_data and update_data[field] != existing.get(field)
