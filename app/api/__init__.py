@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from .routes import (
+    admin,
     businesses,
     customers,
     demo,
@@ -10,6 +11,7 @@ from .routes import (
     invitations,
     memberships,
     onboarding,
+    pass_type_ids,
     passes,
     profile,
     public,
@@ -48,3 +50,7 @@ api_router.include_router(public.router, prefix="/public", tags=["public"])
 
 # Demo endpoints (interactive landing page demo)
 api_router.include_router(demo.router, prefix="/demo", tags=["demo"])
+
+# Admin: certificate pool management
+api_router.include_router(pass_type_ids.router, prefix="/pass-type-ids", tags=["pass-type-ids"])
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"])

@@ -301,6 +301,19 @@ async def activate_design(
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
 
+    # Auto-assign a Pass Type ID from pool (production only)
+    from app.core.config import settings as app_settings
+    if app_settings.per_business_certs_enabled:
+        from app.repositories.pass_type_id import PassTypeIdRepository
+        existing = PassTypeIdRepository.get_for_business(ctx.business_id)
+        if not existing:
+            assigned = PassTypeIdRepository.assign_next_available(ctx.business_id)
+            if not assigned:
+                raise HTTPException(
+                    status_code=503,
+                    detail="No pass type IDs available — contact support",
+                )
+
     # Activate the design (deactivates others for this business)
     design = CardDesignRepository.set_active(ctx.business_id, design_id)
 

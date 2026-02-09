@@ -2,14 +2,13 @@ import time
 from datetime import datetime, timezone
 from email.utils import formatdate, parsedate_to_datetime
 
-from fastapi import APIRouter, HTTPException, Header, Body, Response, Depends
+from fastapi import APIRouter, HTTPException, Header, Body, Response
 
 from app.repositories.customer import CustomerRepository
 from app.repositories.device import DeviceRepository
 from app.repositories.card_design import CardDesignRepository
-from app.services.pass_generator import PassGenerator
+from app.services.pass_generator import create_pass_generator_for_business, create_pass_generator
 from app.core.security import verify_auth_token
-from app.api.deps import get_pass_generator
 
 
 def _parse_datetime(dt_value) -> datetime | None:
@@ -142,7 +141,6 @@ def get_latest_pass(
     serial_number: str,
     authorization: str | None = Header(None),
     if_modified_since: str | None = Header(None, alias="If-Modified-Since"),
-    pass_generator: PassGenerator = Depends(get_pass_generator),
 ):
     """Download the latest version of a pass."""
     auth_token = verify_auth_token(authorization)
@@ -154,7 +152,8 @@ def get_latest_pass(
         raise HTTPException(status_code=401, detail="Invalid authentication")
 
     # Get the active design to check its updated_at
-    design = CardDesignRepository.get_active(customer.get("business_id"))
+    business_id = customer.get("business_id")
+    design = CardDesignRepository.get_active(business_id)
 
     # Determine latest modification time (max of customer and design)
     last_modified = _get_last_modified(customer, design)
@@ -171,12 +170,18 @@ def get_latest_pass(
         except (ValueError, TypeError):
             pass  # Invalid header format, continue with full response
 
+    # Use per-business certs when business_id is available
+    if business_id:
+        pass_generator = create_pass_generator_for_business(business_id, design=design)
+    else:
+        pass_generator = create_pass_generator()
+
     pass_data = pass_generator.generate_pass(
         customer_id=customer["id"],
         name=customer["name"],
         stamps=customer["stamps"],
         auth_token=customer["auth_token"],
-        business_id=customer.get("business_id"),
+        business_id=business_id,
     )
 
     # Format Last-Modified header properly (RFC 7231)
