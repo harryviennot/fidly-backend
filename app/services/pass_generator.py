@@ -1,10 +1,7 @@
 import json
 import hashlib
 import zipfile
-import os
 import io
-import subprocess
-import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -31,22 +28,20 @@ class PassGenerator:
         self,
         team_id: str,
         pass_type_id: str,
-        cert_path: str,
-        key_path: str,
-        wwdr_path: str,
         base_url: str,
+        signer_cert_pem: bytes,
+        signer_key_pem: bytes,
+        wwdr_cert_pem: bytes,
         business_name: str = "Coffee Shop",
-        cert_password: str | None = None,
         strip_config: StripConfig | None = None,
         design: dict | None = None,
     ):
         self.team_id = team_id
         self.pass_type_id = pass_type_id
         self.base_url = base_url.rstrip("/")
-        self.cert_path = cert_path
-        self.key_path = key_path
-        self.wwdr_path = wwdr_path
-        self.cert_password = cert_password
+        self.signer_cert_pem = signer_cert_pem
+        self.signer_key_pem = signer_key_pem
+        self.wwdr_cert_pem = wwdr_cert_pem
         self.design = design
 
         # Use design values if available, otherwise fall back to defaults/params
@@ -102,6 +97,7 @@ class PassGenerator:
             icon_color=_parse_rgb(design.get("icon_color", white)),
             # Custom strip background as bytes
             strip_background_data=strip_background_data,
+            strip_background_opacity=design.get("strip_background_opacity", 40),
         )
 
     def _create_pass_json(self, customer_id: str, name: str, stamps: int, auth_token: str) -> dict:
@@ -194,40 +190,26 @@ class PassGenerator:
             manifest[filename] = hashlib.sha1(content).hexdigest()
         return json.dumps(manifest).encode("utf-8")
 
-    def _sign_manifest_openssl(self, manifest_data: bytes) -> bytes:
-        """Create PKCS#7 detached signature using OpenSSL CLI."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            manifest_path = os.path.join(tmpdir, "manifest.json")
-            signature_path = os.path.join(tmpdir, "signature")
+    def _sign_manifest(self, manifest_data: bytes) -> bytes:
+        """Create PKCS#7 detached signature using Python cryptography (in-memory)."""
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.serialization import pkcs7
 
-            # Write manifest to temp file
-            with open(manifest_path, "wb") as f:
-                f.write(manifest_data)
+        cert = x509.load_pem_x509_certificate(self.signer_cert_pem)
+        key = serialization.load_pem_private_key(self.signer_key_pem, password=None)
+        wwdr = x509.load_pem_x509_certificate(self.wwdr_cert_pem)
 
-            # Build openssl command
-            cmd = [
-                "openssl", "smime", "-sign",
-                "-signer", self.cert_path,
-                "-inkey", self.key_path,
-                "-certfile", self.wwdr_path,
-                "-in", manifest_path,
-                "-out", signature_path,
-                "-outform", "DER",
-                "-binary",
-            ]
-
-            # Add password if provided
-            if self.cert_password:
-                cmd.extend(["-passin", f"pass:{self.cert_password}"])
-
-            # Run openssl
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                raise RuntimeError(f"OpenSSL signing failed: {result.stderr}")
-
-            # Read signature
-            with open(signature_path, "rb") as f:
-                return f.read()
+        return (
+            pkcs7.PKCS7SignatureBuilder()
+            .set_data(manifest_data)
+            .add_signer(cert, key, hashes.SHA256())
+            .add_certificate(wwdr)
+            .sign(serialization.Encoding.DER, [
+                pkcs7.PKCS7Options.DetachedSignature,
+                pkcs7.PKCS7Options.Binary,
+            ])
+        )
 
     def _get_strip_images(self, stamps: int, design_id: str | None) -> dict[str, bytes]:
         """
@@ -357,8 +339,8 @@ class PassGenerator:
         manifest_data = self._create_manifest(files)
         files["manifest.json"] = manifest_data
 
-        # Sign manifest using OpenSSL
-        signature = self._sign_manifest_openssl(manifest_data)
+        # Sign manifest using PKCS7 (in-memory)
+        signature = self._sign_manifest(manifest_data)
         files["signature"] = signature
 
         # Create ZIP file
@@ -388,7 +370,10 @@ def _parse_rgb(color_str: str) -> tuple[int, int, int]:
 
 
 def create_pass_generator(design: dict | None = None) -> PassGenerator:
-    """Factory function to create PassGenerator from settings and optional design."""
+    """Factory function to create PassGenerator from settings (shared certs).
+
+    Used for legacy/demo compatibility where per-business certs are not needed.
+    """
     from app.core.config import settings
 
     # If no design provided, use settings-based strip config as fallback
@@ -406,13 +391,37 @@ def create_pass_generator(design: dict | None = None) -> PassGenerator:
     return PassGenerator(
         team_id=settings.apple_team_id,
         pass_type_id=settings.apple_pass_type_id,
-        cert_path=settings.cert_path,
-        key_path=settings.key_path,
-        wwdr_path=settings.wwdr_path,
         base_url=settings.base_url,
+        signer_cert_pem=Path(settings.cert_path).read_bytes(),
+        signer_key_pem=Path(settings.key_path).read_bytes(),
+        wwdr_cert_pem=Path(settings.wwdr_path).read_bytes(),
         business_name=settings.business_name,
-        cert_password=settings.cert_password,
         strip_config=strip_config,
+        design=design,
+    )
+
+
+def create_pass_generator_for_business(
+    business_id: str, design: dict | None = None
+) -> PassGenerator:
+    """Factory that loads per-business certs via CertificateManager."""
+    from app.core.config import settings, get_public_base_url
+    from app.services.certificate_manager import get_certificate_manager
+
+    cert_manager = get_certificate_manager()
+    identifier, signer_cert, signer_key, _ = cert_manager.get_certs_for_business(
+        business_id
+    )
+
+    wwdr_cert = Path(settings.wwdr_path).read_bytes()
+
+    return PassGenerator(
+        team_id=settings.apple_team_id,
+        pass_type_id=identifier,
+        base_url=get_public_base_url(),
+        signer_cert_pem=signer_cert,
+        signer_key_pem=signer_key,
+        wwdr_cert_pem=wwdr_cert,
         design=design,
     )
 
@@ -424,4 +433,7 @@ def create_pass_generator_with_active_design(business_id: str | None = None) -> 
     design = None
     if business_id:
         design = CardDesignRepository.get_active(business_id)
+
+    if business_id:
+        return create_pass_generator_for_business(business_id, design=design)
     return create_pass_generator(design=design)

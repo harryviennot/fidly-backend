@@ -4,6 +4,63 @@ from functools import lru_cache
 from pydantic_settings import BaseSettings
 
 
+def _load_doppler_secrets():
+    """Load secrets from Doppler API into environment variables.
+
+    Must run BEFORE Settings is instantiated so pydantic can read the env vars.
+    """
+    token = os.getenv("DOPPLER_TOKEN")
+    if not token:
+        return
+
+    try:
+        import requests
+        response = requests.get(
+            "https://api.doppler.com/v3/configs/config/secrets/download",
+            params={"format": "json"},
+            auth=(token, ""),
+            timeout=30,
+        )
+        response.raise_for_status()
+        secrets = response.json()
+
+        # Set all secrets as environment variables
+        for key, value in secrets.items():
+            if key not in os.environ:  # Don't override existing env vars
+                os.environ[key] = value
+
+        # Write certificate files
+        cert_dir = "/app/certs"
+        os.makedirs(cert_dir, exist_ok=True)
+        os.makedirs(os.path.join(cert_dir, "demo"), exist_ok=True)
+
+        cert_mappings = {
+            "SIGNER_CERT_PEM": "signerCert.pem",
+            "SIGNER_KEY_PEM": "signerKey.pem",
+            "WWDR_PEM": "wwdr.pem",
+            "APNS_COMBINED_PEM": "combined.pem",
+            "GOOGLE_WALLET_KEY_JSON": "google-wallet-key.json",
+            "DEMO_SIGNER_CERT_PEM": "demo/signer_cert.pem",
+            "DEMO_SIGNER_KEY_PEM": "demo/signer_key.pem",
+            "DEMO_APNS_COMBINED_PEM": "demo/apns_combined.pem",
+        }
+
+        for secret_name, filename in cert_mappings.items():
+            if secret_name in secrets:
+                filepath = os.path.join(cert_dir, filename)
+                with open(filepath, "w") as f:
+                    f.write(secrets[secret_name])
+                os.chmod(filepath, 0o600)
+
+        print(f"Loaded {len(secrets)} secrets from Doppler")
+    except Exception as e:
+        print(f"Warning: Failed to load Doppler secrets: {e}")
+
+
+# Load Doppler secrets into environment BEFORE Settings is instantiated
+_load_doppler_secrets()
+
+
 class Settings(BaseSettings):
     # Supabase
     supabase_url: str = ""
@@ -51,7 +108,11 @@ class Settings(BaseSettings):
     google_wallet_issuer_id: str = ""
     google_wallet_credentials_path: str = "certs/google-wallet-key.json"
 
-    # Redis (for strip image caching)
+    # Per-business certificates
+    cert_encryption_key: str = ""           # 64 hex chars (256-bit AES key)
+    per_business_certs_enabled: bool = False  # True only in production
+
+    # Redis (for strip image caching and cert caching)
     redis_url: str = "redis://localhost:6379/0"
 
     # Tunnel URL file (cloudflared writes public URL here)

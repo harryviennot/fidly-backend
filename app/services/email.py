@@ -100,6 +100,77 @@ class EmailService:
             logger.error(f"Failed to send invitation email to {to}: {e}")
             raise
 
+    def send_activation_email(
+        self,
+        to: str,
+        owner_name: str,
+        business_name: str,
+    ) -> bool:
+        """Send an account activation email to a business owner."""
+        greeting = f"Hi {owner_name}," if owner_name else "Hi there,"
+        dashboard_url = self.web_app_url
+
+        html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); padding: 30px; border-radius: 10px 10px 0 0;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">Your account is activated!</h1>
+    </div>
+    <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
+        <p style="font-size: 16px; margin-top: 0;">{greeting}</p>
+        <p style="font-size: 16px;">
+            Great news! <strong>{business_name}</strong> has been activated on Stampeo.
+            You can now start issuing loyalty cards to your customers.
+        </p>
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{dashboard_url}"
+               style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+                      color: white;
+                      padding: 14px 28px;
+                      text-decoration: none;
+                      border-radius: 8px;
+                      font-weight: 600;
+                      display: inline-block;">
+                Go to Dashboard
+            </a>
+        </div>
+        <p style="font-size: 14px; color: #666;">
+            Welcome to the Stampeo founding partner program! As an early partner,
+            you'll help shape the product and enjoy lifetime founder pricing.
+        </p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+        <p style="font-size: 12px; color: #999; margin-bottom: 0;">
+            If you have any questions, just reply to this email.
+        </p>
+    </div>
+    <div style="text-align: center; padding: 20px;">
+        <p style="font-size: 12px; color: #999; margin: 0;">
+            – The Stampeo Team
+        </p>
+    </div>
+</body>
+</html>
+"""
+
+        try:
+            logger.info(f"Sending activation email to {to} for business {business_name}")
+            result = resend.Emails.send({
+                "from": "Stampeo <noreply@contact.stampeo.app>",
+                "to": [to],
+                "subject": f"Your {business_name} account is now active on Stampeo!",
+                "html": html_content,
+            })
+            logger.info(f"Activation email sent successfully: {result}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send activation email to {to}: {e}")
+            raise
+
     def send_pass_email(
         self,
         to: str,

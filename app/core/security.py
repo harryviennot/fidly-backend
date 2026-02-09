@@ -117,6 +117,17 @@ def require_auth(
     return verify_jwt(credentials.credentials)
 
 
+def require_superadmin(auth_payload: dict = Depends(require_auth)) -> dict:
+    """Require superadmin access - raises 403 if not a superadmin."""
+    app_metadata = auth_payload.get("app_metadata", {})
+    if not app_metadata.get("is_superadmin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Superadmin access required",
+        )
+    return auth_payload
+
+
 def verify_auth_token(authorization: str | None) -> str | None:
     """Extract auth token from Authorization header (Apple Wallet passes)."""
     if not authorization:

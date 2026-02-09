@@ -99,6 +99,7 @@ class StripConfig:
     # Custom strip background (path for legacy, bytes for Supabase Storage)
     strip_background_path: Optional[str] = None
     strip_background_data: Optional[bytes] = None
+    strip_background_opacity: int = 40  # 0-100, percentage opacity for background image
 
 
 def get_row_distribution(count: int) -> List[int]:
@@ -359,32 +360,30 @@ class StripImageGenerator:
 
     def _create_background(self, width: int, height: int) -> Image.Image:
         """Create the background with optional custom image or gradient."""
-        # Try custom background from bytes data first (Supabase Storage)
+        # Load custom background image if available
+        bg_img = None
         if self.config.strip_background_data:
             try:
-                bg_img = Image.open(io.BytesIO(self.config.strip_background_data)).convert("RGB")
+                bg_img = Image.open(io.BytesIO(self.config.strip_background_data)).convert("RGBA")
                 bg_img = self._resize_cover(bg_img, width, height)
-                return bg_img
             except Exception:
-                pass  # Fall back to other options
+                bg_img = None
 
-        # Try custom background image from file path (legacy)
-        if self.config.strip_background_path:
+        if bg_img is None and self.config.strip_background_path:
             bg_path = Path(self.config.strip_background_path)
             if bg_path.exists():
                 try:
-                    bg_img = Image.open(bg_path).convert("RGB")
+                    bg_img = Image.open(bg_path).convert("RGBA")
                     bg_img = self._resize_cover(bg_img, width, height)
-                    return bg_img
                 except Exception:
-                    pass  # Fall back to solid color
+                    bg_img = None
 
-        # Create solid color background
-        img = Image.new("RGB", (width, height), self.config.background_color)
+        # Create solid color base
+        base = Image.new("RGBA", (width, height), self.config.background_color + (255,))
 
         # Apply gradient if configured
         if self.config.background_gradient_end:
-            draw = ImageDraw.Draw(img)
+            draw = ImageDraw.Draw(base)
             r1, g1, b1 = self.config.background_color
             r2, g2, b2 = self.config.background_gradient_end
 
@@ -393,9 +392,19 @@ class StripImageGenerator:
                 r = int(r1 + (r2 - r1) * ratio)
                 g = int(g1 + (g2 - g1) * ratio)
                 b = int(b1 + (b2 - b1) * ratio)
-                draw.line([(0, y), (width, y)], fill=(r, g, b))
+                draw.line([(0, y), (width, y)], fill=(r, g, b, 255))
 
-        return img
+        # Composite custom background image over the solid color base at configured opacity
+        if bg_img is not None:
+            opacity = max(0, min(100, self.config.strip_background_opacity))
+            if opacity > 0:
+                # Scale alpha channel by opacity percentage
+                alpha = bg_img.split()[3]
+                alpha = alpha.point(lambda a: int(a * opacity / 100))
+                bg_img.putalpha(alpha)
+                base = Image.alpha_composite(base, bg_img)
+
+        return base.convert("RGB")
 
     def _resize_cover(self, img: Image.Image, target_width: int, target_height: int) -> Image.Image:
         """Resize image to cover target dimensions, prioritizing full width coverage."""
