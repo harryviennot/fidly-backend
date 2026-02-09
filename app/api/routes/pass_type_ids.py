@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from postgrest.exceptions import APIError
 
 from app.core.permissions import require_owner_access, BusinessAccessContext
+from app.core.security import require_superadmin
 from app.repositories.pass_type_id import PassTypeIdRepository
 from app.services.certificate_manager import get_certificate_manager
 
@@ -16,6 +17,7 @@ def upload_pass_type_id(
     team_id: str = Form(...),
     p12_file: UploadFile = File(...),
     p12_password: str | None = Form(None),
+    _: dict = Depends(require_superadmin),
 ):
     """Upload a .p12 certificate to add to the pool.
 
@@ -65,19 +67,19 @@ def upload_pass_type_id(
 
 
 @router.get("/pool")
-def get_pool_stats():
+def get_pool_stats(_: dict = Depends(require_superadmin)):
     """Get pool statistics (available/assigned/revoked counts)."""
     return PassTypeIdRepository.get_pool_stats()
 
 
 @router.get("/")
-def list_pass_type_ids():
+def list_pass_type_ids(_: dict = Depends(require_superadmin)):
     """List all pass type IDs with assignment info."""
     return PassTypeIdRepository.list_all()
 
 
 @router.post("/{pass_type_id_id}/revoke")
-def revoke_pass_type_id(pass_type_id_id: str):
+def revoke_pass_type_id(pass_type_id_id: str, _: dict = Depends(require_superadmin)):
     """Mark a pass type ID as revoked."""
     existing = PassTypeIdRepository.get_by_id(pass_type_id_id)
     if not existing:

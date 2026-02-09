@@ -111,15 +111,20 @@ class PassTypeIdRepository:
     @staticmethod
     @with_retry()
     def list_all() -> list[dict]:
-        """List all pass_type_id records with business info."""
+        """List all pass_type_id records with business name via join."""
         db = get_db()
         result = (
             db.table("pass_type_ids")
-            .select("id, identifier, team_id, status, business_id, assigned_at, created_at")
+            .select("id, identifier, team_id, status, business_id, assigned_at, created_at, businesses(name)")
             .order("created_at")
             .execute()
         )
-        return result.data if result and result.data else []
+        rows = result.data if result and result.data else []
+        # Flatten the joined business name
+        for row in rows:
+            biz = row.pop("businesses", None)
+            row["business_name"] = biz["name"] if biz else None
+        return rows
 
     @staticmethod
     @with_retry()
