@@ -148,9 +148,10 @@ class PassCoordinator:
 
         # Update Apple Wallet (via push notification)
         # Apple requires registration because we need the device push token
+        business_id = business["id"]
         if WalletRegistrationRepository.has_apple_wallet(customer_id):
             try:
-                results["apple"] = await self.apple.send_update(customer_id)
+                results["apple"] = await self.apple.send_update(customer_id, business_id=business_id)
             except Exception as e:
                 logger.error(f"[PassCoordinator] Apple Wallet update error: {e}")
                 results["apple"] = {"error": str(e)}

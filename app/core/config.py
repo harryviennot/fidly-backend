@@ -108,7 +108,11 @@ class Settings(BaseSettings):
     google_wallet_issuer_id: str = ""
     google_wallet_credentials_path: str = "certs/google-wallet-key.json"
 
-    # Redis (for strip image caching)
+    # Per-business certificates
+    cert_encryption_key: str = ""           # 64 hex chars (256-bit AES key)
+    per_business_certs_enabled: bool = False  # True only in production
+
+    # Redis (for strip image caching and cert caching)
     redis_url: str = "redis://localhost:6379/0"
 
     # Tunnel URL file (cloudflared writes public URL here)
