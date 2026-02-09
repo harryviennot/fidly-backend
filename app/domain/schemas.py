@@ -213,6 +213,7 @@ class CardDesignUpdate(BaseModel):
     icon_color: Optional[str] = None
 
     # Strip background
+    strip_background_url: Optional[str] = None
     strip_background_opacity: Optional[int] = Field(default=None, ge=0, le=100)
 
     # Pass fields

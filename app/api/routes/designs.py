@@ -170,10 +170,16 @@ async def update_design(
     if existing.get("business_id") != ctx.business_id:
         raise HTTPException(status_code=404, detail="Design not found")
 
+    # Fields that can be explicitly cleared (set to null)
+    clearable_fields = {"strip_background_url"}
+
     # Build update dict from non-None fields
     update_data = {}
     for field, value in data.model_dump(exclude_unset=True).items():
-        if value is not None:
+        if value is None and field in clearable_fields:
+            # Map URL field to DB path column and set to None
+            update_data["strip_background_path"] = None
+        elif value is not None:
             # Convert PassField lists to dicts
             if field in ["secondary_fields", "auxiliary_fields", "back_fields"]:
                 update_data[field] = [f if isinstance(f, dict) else f.model_dump() for f in value]
@@ -190,7 +196,7 @@ async def update_design(
     strip_affecting_fields = {
         "background_color", "stamp_filled_color", "stamp_empty_color",
         "stamp_border_color", "total_stamps", "stamp_icon", "reward_icon",
-        "icon_color", "strip_background_opacity"
+        "icon_color", "strip_background_opacity", "strip_background_path"
     }
     affects_strips = any(
         field in update_data and update_data[field] != existing.get(field)
