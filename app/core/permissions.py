@@ -5,6 +5,9 @@ from fastapi import Depends, HTTPException, status
 from app.core.security import require_auth
 from app.repositories.user import UserRepository
 from app.repositories.membership import MembershipRepository
+from app.repositories.business import BusinessRepository
+
+
 
 def get_current_user_profile(auth_payload: dict = Depends(require_auth)) -> dict:
     """Get the public user profile from auth payload.
@@ -89,6 +92,14 @@ def require_business_access(role: Optional[str] = None):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"This action requires '{role}' role"
+            )
+
+        # Check business is active
+        business = BusinessRepository.get_by_id(business_id)
+        if not business or business.get("status") != "active":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your business account is pending activation. You'll receive an email when approved."
             )
 
         return BusinessAccessContext(

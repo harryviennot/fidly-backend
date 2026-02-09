@@ -28,6 +28,8 @@ class BusinessResponse(BaseModel):
     name: str
     url_slug: str
     subscription_tier: str
+    status: str = "pending"
+    activated_at: Optional[datetime] = None
     stripe_customer_id: Optional[str] = None
     settings: dict = {}
     logo_url: Optional[str] = None

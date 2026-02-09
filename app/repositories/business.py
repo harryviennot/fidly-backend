@@ -43,11 +43,26 @@ class BusinessRepository:
 
     @staticmethod
     @with_retry()
-    def get_all() -> list[dict]:
-        """Get all businesses."""
+    def get_all(status: str | None = None) -> list[dict]:
+        """Get all businesses, optionally filtered by status."""
         db = get_db()
-        result = db.table("businesses").select("*").order("created_at", desc=True).execute()
+        query = db.table("businesses").select("*")
+        if status:
+            query = query.eq("status", status)
+        result = query.order("created_at", desc=True).execute()
         return result.data if result and result.data else []
+
+    @staticmethod
+    @with_retry()
+    def update_status(business_id: str, status: str) -> dict | None:
+        """Update a business status. Sets activated_at when activating."""
+        db = get_db()
+        data = {"status": status}
+        if status == "active":
+            from datetime import datetime, timezone
+            data["activated_at"] = datetime.now(timezone.utc).isoformat()
+        result = db.table("businesses").update(data).eq("id", business_id).execute()
+        return result.data[0] if result and result.data else None
 
     @staticmethod
     @with_retry()
