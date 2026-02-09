@@ -233,12 +233,12 @@ class PassCoordinator:
                 # Invalidate old cache before regenerating
                 try:
                     from app.services.strip_cache import invalidate_design_cache
-                    invalidate_design_cache(design["id"])
+                    await asyncio.to_thread(invalidate_design_cache, design["id"])
                 except Exception:
                     pass  # Cache not available
 
-                self.strips.delete_strips_for_design(design["id"])
-                strip_result = self.strips.pregenerate_all_strips(design, business_id)
+                await asyncio.to_thread(self.strips.delete_strips_for_design, design["id"])
+                strip_result = await asyncio.to_thread(self.strips.pregenerate_all_strips, design, business_id)
                 results["strips_regenerated"] = True
 
                 # Cache the new image bytes and URLs for fast pass generation
@@ -260,7 +260,7 @@ class PassCoordinator:
 
         # Update Google Wallet class
         try:
-            self.google.create_or_update_class(business, design)
+            await asyncio.to_thread(self.google.create_or_update_class, business, design)
             results["google_class_updated"] = True
         except Exception as e:
             print(f"Google class update error: {e}")
@@ -274,25 +274,29 @@ class PassCoordinator:
             print(f"Apple notifications error: {e}")
             results["apple_notifications"] = {"error": str(e)}
 
-        # Update all Google Wallet objects
-        google_registrations = WalletRegistrationRepository.get_all_google_for_business(
-            business_id
-        )
+        # Update all Google Wallet objects (CPU/IO-bound, run in thread)
+        def _update_google_objects():
+            count = 0
+            google_registrations = WalletRegistrationRepository.get_all_google_for_business(
+                business_id
+            )
+            for reg in google_registrations:
+                try:
+                    customer_id = reg["customer_id"]
+                    customer = CustomerRepository.get_by_id(customer_id)
+                    if customer:
+                        self.google.update_object(
+                            customer=customer,
+                            business=business,
+                            design=design,
+                            stamp_count=customer.get("stamps", 0),
+                        )
+                        count += 1
+                except Exception as e:
+                    print(f"Google object update error for {reg.get('customer_id')}: {e}")
+            return count
 
-        for reg in google_registrations:
-            try:
-                customer_id = reg["customer_id"]
-                customer = CustomerRepository.get_by_id(customer_id)
-                if customer:
-                    self.google.update_object(
-                        customer=customer,
-                        business=business,
-                        design=design,
-                        stamp_count=customer.get("stamps", 0),
-                    )
-                    results["google_objects_updated"] += 1
-            except Exception as e:
-                print(f"Google object update error for {customer_id}: {e}")
+        results["google_objects_updated"] = await asyncio.to_thread(_update_google_objects)
 
         return results
 

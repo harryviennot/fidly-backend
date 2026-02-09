@@ -197,38 +197,35 @@ async def update_design(
         for field in strip_affecting_fields
     )
 
-    if update_data and affects_strips:
+    if update_data and existing.get("is_active"):
+        # Active design: always notify customers on any change
         business = BusinessRepository.get_by_id(ctx.business_id)
 
-        if existing.get("is_active"):
-            # Active design: regenerate strips in background, then notify customers
-            async def regenerate_and_notify():
-                try:
-                    await coordinator.on_design_updated(
-                        business=business,
-                        design=design,
-                        regenerate_strips=True,
-                    )
-                except Exception as e:
-                    print(f"Background design update error: {e}")
+        async def regenerate_and_notify():
+            try:
+                await coordinator.on_design_updated(
+                    business=business,
+                    design=design,
+                    regenerate_strips=affects_strips,
+                )
+            except Exception as e:
+                print(f"Background design update error: {e}")
 
-            background_tasks.add_task(regenerate_and_notify)
-        else:
-            # Inactive design: regenerate in background, track status
-            # Set status to regenerating to prevent activation until complete
-            CardDesignRepository.update(design_id, strip_status="regenerating")
+        background_tasks.add_task(regenerate_and_notify)
 
-            def regenerate_inactive():
-                try:
-                    coordinator.pregenerate_strips_for_design(design, ctx.business_id)
-                    # Mark as ready when done
-                    CardDesignRepository.update(design_id, strip_status="ready")
-                except Exception as e:
-                    print(f"Strip regeneration error: {e}")
-                    # Still mark as ready so design isn't stuck
-                    CardDesignRepository.update(design_id, strip_status="ready")
+    elif update_data and affects_strips and not existing.get("is_active"):
+        # Inactive design with strip changes: regenerate strips only
+        CardDesignRepository.update(design_id, strip_status="regenerating")
 
-            background_tasks.add_task(regenerate_inactive)
+        def regenerate_inactive():
+            try:
+                coordinator.pregenerate_strips_for_design(design, ctx.business_id)
+                CardDesignRepository.update(design_id, strip_status="ready")
+            except Exception as e:
+                print(f"Strip regeneration error: {e}")
+                CardDesignRepository.update(design_id, strip_status="ready")
+
+        background_tasks.add_task(regenerate_inactive)
 
     return _design_to_response(design)
 
