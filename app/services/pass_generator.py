@@ -8,6 +8,7 @@ from typing import Optional
 import httpx
 
 from app.services.strip_generator import StripImageGenerator, StripConfig
+from app.services.localization import get_system_string
 
 white = "rgb(255, 255, 255)"
 
@@ -35,6 +36,8 @@ class PassGenerator:
         business_name: str = "Coffee Shop",
         strip_config: StripConfig | None = None,
         design: dict | None = None,
+        primary_locale: str = "fr",
+        translations: dict | None = None,
     ):
         self.team_id = team_id
         self.pass_type_id = pass_type_id
@@ -43,6 +46,8 @@ class PassGenerator:
         self.signer_key_pem = signer_key_pem
         self.wwdr_cert_pem = wwdr_cert_pem
         self.design = design
+        self.primary_locale = primary_locale
+        self.translations = translations or {}
 
         # Use design values if available, otherwise fall back to defaults/params
         if design:
@@ -150,7 +155,7 @@ class PassGenerator:
                 "headerFields": [
                     {
                         "key": "stamps",
-                        "label": "STAMPS",
+                        "label": get_system_string("stamps_label", self.primary_locale),
                         "value": f"{stamps} / {total_stamps}"
                     }
                 ],
@@ -182,6 +187,68 @@ class PassGenerator:
             pass_json["storeCard"]["backFields"] = back_fields
 
         return pass_json
+
+    def _create_pass_strings(self, locale: str) -> bytes | None:
+        """Generate Apple's pass.strings file for a locale.
+
+        Format: "original_value" = "translated_value"; (UTF-16 encoded).
+        Maps primary-language values to their translations so Apple Wallet
+        can auto-select based on the device language.
+        """
+        trans = self.translations.get(locale)
+        if not trans:
+            return None
+
+        lines: list[str] = []
+
+        # System string: stamps label
+        primary_stamps = get_system_string("stamps_label", self.primary_locale)
+        translated_stamps = get_system_string("stamps_label", locale)
+        if primary_stamps != translated_stamps:
+            lines.append(f'"{primary_stamps}" = "{translated_stamps}";')
+
+        # Business content translations
+        design = self.design or {}
+        field_map = {
+            "organization_name": design.get("organization_name", ""),
+            "description": design.get("description", ""),
+            "logo_text": design.get("logo_text") or design.get("organization_name", ""),
+        }
+        for field_key, primary_value in field_map.items():
+            translated = trans.get(field_key)
+            if translated and primary_value and translated != primary_value:
+                # Escape quotes in values
+                pv = primary_value.replace('"', '\\"')
+                tv = translated.replace('"', '\\"')
+                lines.append(f'"{pv}" = "{tv}";')
+
+        # Field arrays: secondary_fields, auxiliary_fields, back_fields
+        for array_key in ("secondary_fields", "auxiliary_fields", "back_fields"):
+            primary_fields = design.get(array_key, [])
+            translated_fields = trans.get(array_key, [])
+            # Build lookup by key
+            trans_by_key = {f["key"]: f for f in translated_fields if isinstance(f, dict) and "key" in f}
+            for pf in primary_fields:
+                tf = trans_by_key.get(pf.get("key", ""))
+                if not tf:
+                    continue
+                # Translate label
+                if tf.get("label") and tf["label"] != pf.get("label", ""):
+                    pl = pf["label"].replace('"', '\\"')
+                    tl = tf["label"].replace('"', '\\"')
+                    lines.append(f'"{pl}" = "{tl}";')
+                # Translate value
+                if tf.get("value") and tf["value"] != pf.get("value", ""):
+                    pv = pf["value"].replace('"', '\\"')
+                    tv = tf["value"].replace('"', '\\"')
+                    lines.append(f'"{pv}" = "{tv}";')
+
+        if not lines:
+            return None
+
+        content = "\n".join(lines) + "\n"
+        # Apple requires UTF-16 encoding for pass.strings
+        return content.encode("utf-16")
 
     def _create_manifest(self, files: dict[str, bytes]) -> bytes:
         """Create manifest.json with SHA-1 hashes of all files."""
@@ -335,6 +402,25 @@ class PassGenerator:
         pass_json = self._create_pass_json(customer_id, name, stamps, auth_token)
         files["pass.json"] = json.dumps(pass_json).encode("utf-8")
 
+        # Add .lproj translation folders for non-primary locales
+        has_any_lproj = False
+        for locale in self.translations:
+            if locale != self.primary_locale:
+                pass_strings = self._create_pass_strings(locale)
+                if pass_strings:
+                    files[f"{locale}.lproj/pass.strings"] = pass_strings
+                    has_any_lproj = True
+
+        # Always include a .lproj for the primary locale when other .lproj
+        # dirs exist.  Without it Apple Wallet walks the device's preferred-
+        # language list (e.g. [fr, en]) and, finding no fr.lproj, falls
+        # through to en.lproj — showing English even on a French device.
+        # An empty pass.strings is enough to make Apple "stop" at French.
+        if has_any_lproj:
+            primary_lproj = f"{self.primary_locale}.lproj/pass.strings"
+            if primary_lproj not in files:
+                files[primary_lproj] = b""
+
         # Create manifest
         manifest_data = self._create_manifest(files)
         files["manifest.json"] = manifest_data
@@ -402,7 +488,10 @@ def create_pass_generator(design: dict | None = None) -> PassGenerator:
 
 
 def create_pass_generator_for_business(
-    business_id: str, design: dict | None = None
+    business_id: str,
+    design: dict | None = None,
+    primary_locale: str = "fr",
+    translations: dict | None = None,
 ) -> PassGenerator:
     """Factory that loads per-business certs via CertificateManager."""
     from app.core.config import settings, get_public_base_url
@@ -423,17 +512,33 @@ def create_pass_generator_for_business(
         signer_key_pem=signer_key,
         wwdr_cert_pem=wwdr_cert,
         design=design,
+        primary_locale=primary_locale,
+        translations=translations,
     )
 
 
 def create_pass_generator_with_active_design(business_id: str | None = None) -> PassGenerator:
     """Factory function that loads the active design from the database."""
     from app.repositories.card_design import CardDesignRepository
+    from app.repositories.business import BusinessRepository
 
     design = None
-    if business_id:
-        design = CardDesignRepository.get_active(business_id)
+    primary_locale = "fr"
+    translations = None
 
     if business_id:
-        return create_pass_generator_for_business(business_id, design=design)
+        design = CardDesignRepository.get_active(business_id)
+        business = BusinessRepository.get_by_id(business_id)
+        if business:
+            primary_locale = business.get("primary_locale", "fr")
+        if design:
+            translations = design.get("translations") or {}
+
+    if business_id:
+        return create_pass_generator_for_business(
+            business_id,
+            design=design,
+            primary_locale=primary_locale,
+            translations=translations,
+        )
     return create_pass_generator(design=design)
