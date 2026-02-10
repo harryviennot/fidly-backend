@@ -96,19 +96,12 @@ class MembershipResponse(BaseModel):
 # ============================================
 
 
-class CustomerCreate(BaseModel):
-    name: str
-    email: EmailStr
-
-
 class CustomerResponse(BaseModel):
     id: str
     name: str
     email: str
     stamps: int
     total_redemptions: int = 0
-    pass_url: Optional[str] = None  # Apple Wallet pass download URL
-    google_wallet_url: Optional[str] = None  # Google Wallet save URL
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
