@@ -16,6 +16,7 @@ from google.oauth2 import service_account
 from app.core.config import settings, get_callback_url, get_public_base_url
 from app.repositories.wallet_registration import WalletRegistrationRepository
 from app.repositories.strip_image import StripImageRepository
+from app.services.localization import get_system_string
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,42 @@ class GoogleWalletService:
             )
         return self._http_client
 
+    @staticmethod
+    def _localized_value(
+        value: str,
+        primary_locale: str,
+        translations: dict | None = None,
+        field_key: str | None = None,
+    ) -> dict:
+        """Build a Google Wallet localizedString with optional translatedValues.
+
+        Args:
+            value: The primary-language value.
+            primary_locale: ISO locale code for the primary language.
+            translations: The design's translations dict keyed by locale.
+            field_key: Key to look up in each locale's translation dict.
+        """
+        result: dict = {
+            "defaultValue": {
+                "language": primary_locale,
+                "value": value,
+            }
+        }
+        if translations and field_key:
+            translated_values = []
+            for locale, trans in translations.items():
+                if locale == primary_locale:
+                    continue
+                translated = trans.get(field_key) if isinstance(trans, dict) else None
+                if translated:
+                    translated_values.append({
+                        "language": locale,
+                        "value": translated,
+                    })
+            if translated_values:
+                result["translatedValues"] = translated_values
+        return result
+
     def _get_class_id(self, business_id: str) -> str:
         """Generate class ID for a business."""
         return f"{self.issuer_id}.{business_id}"
@@ -82,6 +119,8 @@ class GoogleWalletService:
         """
         class_id = self._get_class_id(business["id"])
         callback_url = get_callback_url()
+        primary_locale = business.get("primary_locale", "fr")
+        translations = design.get("translations") or {}
 
         # Parse background color for card
         bg_color = design.get("background_color", "rgb(139, 90, 43)")
@@ -89,6 +128,8 @@ class GoogleWalletService:
 
         # Build dynamic card row template based on design fields
         card_rows = self._build_card_row_template_infos(design)
+
+        link_description = get_system_string("view_loyalty_card", primary_locale)
 
         payload = {
             "id": class_id,
@@ -102,7 +143,7 @@ class GoogleWalletService:
                 "uris": [
                     {
                         "uri": f"{get_public_base_url()}/business/{business['id']}",
-                        "description": "View Loyalty Card",
+                        "description": link_description,
                         "id": "website"
                     }
                 ]
@@ -118,14 +159,16 @@ class GoogleWalletService:
         # Only add heroImage if we have a valid logo URL
         logo_url = design.get("logo_url")
         if logo_url:
+            business_name = business.get("name", "Business")
+            hero_desc = get_system_string(
+                "loyalty_card_description", primary_locale
+            )
             payload["heroImage"] = {
                 "sourceUri": {"uri": logo_url},
-                "contentDescription": {
-                    "defaultValue": {
-                        "language": "en",
-                        "value": f"{business.get('name', 'Business')} Loyalty Card"
-                    }
-                }
+                "contentDescription": self._localized_value(
+                    f"{business_name} — {hero_desc}",
+                    primary_locale,
+                ),
             }
 
         return payload
@@ -145,6 +188,8 @@ class GoogleWalletService:
         """
         class_id = self._get_class_id(business["id"])
         object_id = self._get_object_id(customer["id"])
+        primary_locale = business.get("primary_locale", "fr")
+        translations = design.get("translations") or {}
 
         # Get pre-generated hero image URL (try cache first, then database)
         hero_url = None
@@ -167,11 +212,29 @@ class GoogleWalletService:
         bg_color = design.get("background_color", "rgb(139, 90, 43)")
         hex_color = self._rgb_to_hex(bg_color)
 
+        stamps_label = get_system_string("stamps_label", primary_locale)
+
+        # Build localized stamps header with all supported locales
+        stamps_localized: dict = {
+            "defaultValue": {"language": primary_locale, "value": stamps_label}
+        }
+        stamps_translated = []
+        for locale in ("fr", "en"):
+            if locale == primary_locale:
+                continue
+            stamps_translated.append({
+                "language": locale,
+                "value": get_system_string("stamps_label", locale),
+            })
+        if stamps_translated:
+            stamps_localized["translatedValues"] = stamps_translated
+
         # Build textModulesData - stamps first, then design fields
         text_modules = [
             {
                 "id": "stamps",
-                "header": "STAMPS",
+                "header": stamps_label,
+                "localizedHeader": stamps_localized,
                 "body": f"{stamp_count} / {total_stamps}",
             }
         ]
@@ -179,38 +242,52 @@ class GoogleWalletService:
         # Secondary fields (displayed on card front - row 2)
         secondary_fields = design.get("secondary_fields", [])
         text_modules.extend(
-            self._convert_pass_fields_to_text_modules(secondary_fields, "sec_")
+            self._convert_pass_fields_to_text_modules(
+                secondary_fields, "sec_",
+                translations=translations, primary_locale=primary_locale,
+                array_key="secondary_fields",
+            )
         )
 
         # Auxiliary fields (displayed on card front - one row)
         auxiliary_fields = design.get("auxiliary_fields", [])
         text_modules.extend(
-            self._convert_pass_fields_to_text_modules(auxiliary_fields, "aux_")
+            self._convert_pass_fields_to_text_modules(
+                auxiliary_fields, "aux_",
+                translations=translations, primary_locale=primary_locale,
+                array_key="auxiliary_fields",
+            )
         )
 
         # Back fields (displayed in details section only - not in cardRowTemplateInfos)
         back_fields = design.get("back_fields", [])
         text_modules.extend(
-            self._convert_pass_fields_to_text_modules(back_fields, "back_")
+            self._convert_pass_fields_to_text_modules(
+                back_fields, "back_",
+                translations=translations, primary_locale=primary_locale,
+                array_key="back_fields",
+            )
         )
+
+        business_name = business.get("name", "Loyalty Card")
 
         payload = {
             "id": object_id,
             "classId": class_id,
             "state": "ACTIVE",
             "textModulesData": text_modules,
-            "cardTitle": {
-                "defaultValue": {
-                    "language": "en",
-                    "value": business.get("name", "Loyalty Card")
-                }
-            },
-            "header": {
-                "defaultValue": {
-                    "language": "en",
-                    "value": description
-                }
-            },
+            "cardTitle": self._localized_value(
+                business_name,
+                primary_locale,
+                translations,
+                "organization_name",
+            ),
+            "header": self._localized_value(
+                description,
+                primary_locale,
+                translations,
+                "description",
+            ),
             "hexBackgroundColor": hex_color,
             "barcode": {
                 "type": "QR_CODE",
@@ -220,26 +297,31 @@ class GoogleWalletService:
 
         # Only add heroImage if we have a valid URL
         if hero_url:
+            stamps_desc = get_system_string(
+                "stamps_content_description",
+                primary_locale,
+                count=stamp_count,
+                total=total_stamps,
+            )
             payload["heroImage"] = {
                 "sourceUri": {"uri": hero_url},
-                "contentDescription": {
-                    "defaultValue": {
-                        "language": "en",
-                        "value": f"{stamp_count}/{total_stamps} stamps"
-                    }
-                }
+                "contentDescription": self._localized_value(
+                    stamps_desc, primary_locale,
+                ),
             }
 
         # Only add logo/wideLogo if we have a valid URL
         # Google Wallet requires 'logo' to be set when 'wideLogo' is set
         logo_url = design.get("logo_path")
         if logo_url:
-            logo_content_description = {
-                "defaultValue": {
-                    "language": "en",
-                    "value": f"{business.get('name', 'Business')} logo"
-                }
-            }
+            logo_desc = get_system_string(
+                "logo_content_description",
+                primary_locale,
+                business=business.get("name", "Business"),
+            )
+            logo_content_description = self._localized_value(
+                logo_desc, primary_locale,
+            )
             # logo is required when wideLogo is set
             payload["logo"] = {
                 "sourceUri": {"uri": logo_url},
@@ -280,6 +362,9 @@ class GoogleWalletService:
         self,
         fields: list[dict],
         prefix: str,
+        translations: dict | None = None,
+        primary_locale: str = "fr",
+        array_key: str | None = None,
     ) -> list[dict]:
         """
         Convert Apple Wallet PassField format to Google Wallet textModulesData.
@@ -287,18 +372,60 @@ class GoogleWalletService:
         Args:
             fields: List of {key, label, value} dicts from design
             prefix: ID prefix ('sec_', 'aux_', 'back_') for uniqueness
+            translations: Design translations dict keyed by locale,
+                          e.g. {"en": {"secondary_fields": [{"key":"reward","label":"Reward","value":"..."}]}}
+            primary_locale: ISO locale code for the primary language
+            array_key: The design array name (e.g. 'secondary_fields') used
+                       to look up per-field translations
 
         Returns:
             List of {id, header, body} dicts for textModulesData
         """
-        return [
-            {
-                "id": f"{prefix}{field['key']}",
+        # Pre-build a lookup: locale -> field_key -> {label, value}
+        trans_lookup: dict[str, dict[str, dict]] = {}
+        if translations and array_key:
+            for locale, trans in translations.items():
+                if locale == primary_locale or not isinstance(trans, dict):
+                    continue
+                for tf in trans.get(array_key, []):
+                    if isinstance(tf, dict) and "key" in tf:
+                        trans_lookup.setdefault(locale, {})[tf["key"]] = tf
+
+        modules = []
+        for field in fields:
+            field_key = field["key"]
+            module: dict = {
+                "id": f"{prefix}{field_key}",
                 "header": field["label"],
                 "body": field["value"],
             }
-            for field in fields
-        ]
+
+            # Add localizedHeader / localizedBody when translations exist
+            if trans_lookup:
+                header_translations = []
+                body_translations = []
+                for locale, fields_map in trans_lookup.items():
+                    tf = fields_map.get(field_key)
+                    if not tf:
+                        continue
+                    if tf.get("label"):
+                        header_translations.append({"language": locale, "value": tf["label"]})
+                    if tf.get("value"):
+                        body_translations.append({"language": locale, "value": tf["value"]})
+
+                if header_translations:
+                    module["localizedHeader"] = {
+                        "defaultValue": {"language": primary_locale, "value": field["label"]},
+                        "translatedValues": header_translations,
+                    }
+                if body_translations:
+                    module["localizedBody"] = {
+                        "defaultValue": {"language": primary_locale, "value": field["value"]},
+                        "translatedValues": body_translations,
+                    }
+
+            modules.append(module)
+        return modules
 
     def _build_card_row_template_infos(self, design: dict) -> list[dict]:
         """

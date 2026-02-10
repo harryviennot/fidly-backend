@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Response
 
 from app.repositories.customer import CustomerRepository
-from app.services.pass_generator import create_pass_generator_for_business, create_pass_generator
+from app.services.pass_generator import create_pass_generator_with_active_design, create_pass_generator
 
 router = APIRouter()
 
@@ -17,7 +17,7 @@ def download_pass(customer_id: str):
 
     # Use per-business certs when business_id is available
     if business_id:
-        pass_generator = create_pass_generator_for_business(business_id)
+        pass_generator = create_pass_generator_with_active_design(business_id)
     else:
         pass_generator = create_pass_generator()
 
