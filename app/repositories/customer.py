@@ -89,6 +89,37 @@ class CustomerRepository:
 
     @staticmethod
     @with_retry()
+    def void_stamp(customer_id: str) -> int:
+        """Decrement stamps by 1 (min 0). Returns the new stamp count."""
+        db = get_db()
+        customer = db.table("customers").select("stamps").eq("id", customer_id).limit(1).execute()
+        if not customer or not customer.data:
+            raise ValueError("Customer not found")
+
+        new_stamps = max(customer.data[0]["stamps"] - 1, 0)
+        db.table("customers").update({
+            "stamps": new_stamps,
+            "updated_at": "now()"
+        }).eq("id", customer_id).execute()
+        return new_stamps
+
+    @staticmethod
+    @with_retry()
+    def increment_redemptions(customer_id: str) -> None:
+        """Increment total_redemptions by 1."""
+        db = get_db()
+        customer = db.table("customers").select("total_redemptions").eq("id", customer_id).limit(1).execute()
+        if not customer or not customer.data:
+            raise ValueError("Customer not found")
+
+        current = customer.data[0].get("total_redemptions", 0)
+        db.table("customers").update({
+            "total_redemptions": current + 1,
+            "updated_at": "now()"
+        }).eq("id", customer_id).execute()
+
+    @staticmethod
+    @with_retry()
     def update(customer_id: str, **kwargs) -> dict | None:
         """Update a customer."""
         db = get_db()
