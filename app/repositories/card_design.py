@@ -25,6 +25,7 @@ class CardDesignRepository:
         secondary_fields: list | None = None,
         auxiliary_fields: list | None = None,
         back_fields: list | None = None,
+        translations: dict | None = None,
     ) -> dict | None:
         """Create a new card design for a business."""
         db = get_db()
@@ -48,6 +49,7 @@ class CardDesignRepository:
             "secondary_fields": secondary_fields or [],
             "auxiliary_fields": auxiliary_fields or [],
             "back_fields": back_fields or [],
+            "translations": translations or {},
         }).execute()
         return result.data[0] if result and result.data else None
 

@@ -21,6 +21,7 @@ class BusinessUpdate(BaseModel):
     stripe_customer_id: Optional[str] = None
     settings: Optional[dict] = None
     logo_url: Optional[str] = None
+    primary_locale: Optional[str] = Field(default=None, pattern=r'^(fr|en)$')
 
 
 class BusinessResponse(BaseModel):
@@ -33,6 +34,7 @@ class BusinessResponse(BaseModel):
     stripe_customer_id: Optional[str] = None
     settings: dict = {}
     logo_url: Optional[str] = None
+    primary_locale: str = "fr"
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -159,6 +161,16 @@ class StampConfig(BaseModel):
     border_color: str = "rgb(255, 255, 255)"
 
 
+class DesignTranslation(BaseModel):
+    """Translation overlay for a single locale."""
+    organization_name: Optional[str] = None
+    description: Optional[str] = None
+    logo_text: Optional[str] = None
+    secondary_fields: Optional[List[PassField]] = None
+    auxiliary_fields: Optional[List[PassField]] = None
+    back_fields: Optional[List[PassField]] = None
+
+
 class CardDesignCreate(BaseModel):
     """Request body for creating a card design."""
     name: str
@@ -189,6 +201,9 @@ class CardDesignCreate(BaseModel):
     secondary_fields: list[PassField] = []
     auxiliary_fields: list[PassField] = []
     back_fields: list[PassField] = []
+
+    # Translations
+    translations: Optional[dict[str, DesignTranslation]] = None
 
 
 class CardDesignUpdate(BaseModel):
@@ -222,6 +237,9 @@ class CardDesignUpdate(BaseModel):
     secondary_fields: Optional[list[PassField]] = None
     auxiliary_fields: Optional[list[PassField]] = None
     back_fields: Optional[list[PassField]] = None
+
+    # Translations
+    translations: Optional[dict[str, DesignTranslation]] = None
 
 
 class CardDesignResponse(BaseModel):
@@ -262,6 +280,9 @@ class CardDesignResponse(BaseModel):
     secondary_fields: list[PassField] = []
     auxiliary_fields: list[PassField] = []
     back_fields: list[PassField] = []
+
+    # Translations
+    translations: dict = {}
 
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

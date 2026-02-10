@@ -32,7 +32,13 @@ class AppleWalletService:
         self._pass_generator = pass_generator
         self._apns_client = apns_client
 
-    def _get_pass_generator(self, business_id: str | None = None, design: dict | None = None) -> PassGenerator:
+    def _get_pass_generator(
+        self,
+        business_id: str | None = None,
+        design: dict | None = None,
+        primary_locale: str = "fr",
+        translations: dict | None = None,
+    ) -> PassGenerator:
         """Get or create a PassGenerator instance.
 
         If business_id is provided, loads per-business certs via CertificateManager.
@@ -41,7 +47,12 @@ class AppleWalletService:
             return self._pass_generator
 
         if business_id:
-            return create_pass_generator_for_business(business_id, design=design)
+            return create_pass_generator_for_business(
+                business_id,
+                design=design,
+                primary_locale=primary_locale,
+                translations=translations,
+            )
 
         # Fallback to shared certs (legacy/demo)
         return PassGenerator(
@@ -52,6 +63,8 @@ class AppleWalletService:
             signer_key_pem=Path(settings.key_path).read_bytes(),
             wwdr_cert_pem=Path(settings.wwdr_path).read_bytes(),
             design=design,
+            primary_locale=primary_locale,
+            translations=translations,
         )
 
     def _get_apns_client(self, business_id: str | None = None) -> APNsClient:
@@ -83,7 +96,23 @@ class AppleWalletService:
             The .pkpass file as bytes
         """
         business_id = customer.get("business_id")
-        generator = self._get_pass_generator(business_id=business_id, design=design)
+
+        # Load locale from business
+        primary_locale = "fr"
+        if business_id:
+            from app.repositories.business import BusinessRepository
+            business = BusinessRepository.get_by_id(business_id)
+            if business:
+                primary_locale = business.get("primary_locale", "fr")
+
+        translations = design.get("translations") or {}
+
+        generator = self._get_pass_generator(
+            business_id=business_id,
+            design=design,
+            primary_locale=primary_locale,
+            translations=translations,
+        )
 
         return generator.generate_pass(
             customer_id=customer["id"],

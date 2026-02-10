@@ -56,6 +56,7 @@ def _design_to_response(design: dict) -> CardDesignResponse:
         secondary_fields=design.get("secondary_fields", []),
         auxiliary_fields=design.get("auxiliary_fields", []),
         back_fields=design.get("back_fields", []),
+        translations=design.get("translations") or {},
         created_at=design.get("created_at"),
         updated_at=design.get("updated_at"),
     )
@@ -114,6 +115,14 @@ def create_design(
     auxiliary_fields = [f.model_dump() for f in data.auxiliary_fields]
     back_fields = [f.model_dump() for f in data.back_fields]
 
+    # Serialize translations to plain dicts for JSONB storage
+    translations_data = {}
+    if data.translations:
+        translations_data = {
+            locale: t.model_dump(exclude_none=True)
+            for locale, t in data.translations.items()
+        }
+
     design = CardDesignRepository.create(
         business_id=ctx.business_id,
         name=data.name,
@@ -134,6 +143,7 @@ def create_design(
         secondary_fields=secondary_fields,
         auxiliary_fields=auxiliary_fields,
         back_fields=back_fields,
+        translations=translations_data,
     )
 
     if not design:
@@ -183,6 +193,12 @@ async def update_design(
             # Convert PassField lists to dicts
             if field in ["secondary_fields", "auxiliary_fields", "back_fields"]:
                 update_data[field] = [f if isinstance(f, dict) else f.model_dump() for f in value]
+            elif field == "translations":
+                # Serialize DesignTranslation models to plain dicts for JSONB
+                update_data[field] = {
+                    locale: (t if isinstance(t, dict) else t)
+                    for locale, t in value.items()
+                }
             else:
                 update_data[field] = value
 

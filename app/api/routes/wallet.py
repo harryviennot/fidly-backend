@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Header, Body, Response
 from app.repositories.customer import CustomerRepository
 from app.repositories.device import DeviceRepository
 from app.repositories.card_design import CardDesignRepository
+from app.repositories.business import BusinessRepository
 from app.services.pass_generator import create_pass_generator_for_business, create_pass_generator
 from app.core.security import verify_auth_token
 
@@ -170,9 +171,19 @@ def get_latest_pass(
         except (ValueError, TypeError):
             pass  # Invalid header format, continue with full response
 
+    # Load business for primary_locale and design translations
+    business = BusinessRepository.get_by_id(business_id) if business_id else None
+    primary_locale = business.get("primary_locale", "fr") if business else "fr"
+    translations = (design.get("translations") or {}) if design else None
+
     # Use per-business certs when business_id is available
     if business_id:
-        pass_generator = create_pass_generator_for_business(business_id, design=design)
+        pass_generator = create_pass_generator_for_business(
+            business_id,
+            design=design,
+            primary_locale=primary_locale,
+            translations=translations,
+        )
     else:
         pass_generator = create_pass_generator()
 
