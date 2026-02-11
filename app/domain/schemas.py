@@ -96,18 +96,12 @@ class MembershipResponse(BaseModel):
 # ============================================
 
 
-class CustomerCreate(BaseModel):
-    name: str
-    email: EmailStr
-
-
 class CustomerResponse(BaseModel):
     id: str
     name: str
     email: str
     stamps: int
-    pass_url: Optional[str] = None  # Apple Wallet pass download URL
-    google_wallet_url: Optional[str] = None  # Google Wallet save URL
+    total_redemptions: int = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -117,6 +111,42 @@ class StampResponse(BaseModel):
     name: str
     stamps: int
     message: str
+    transaction_id: Optional[str] = None
+
+
+class TransactionResponse(BaseModel):
+    id: str
+    business_id: str
+    customer_id: str
+    employee_id: Optional[str] = None
+    employee_name: Optional[str] = None
+    type: str
+    stamp_delta: int
+    stamps_before: int
+    stamps_after: int
+    metadata: dict = {}
+    source: str
+    voided_transaction_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class TransactionListResponse(BaseModel):
+    transactions: List[TransactionResponse]
+    total_count: int
+    has_more: bool
+
+
+class VoidStampRequest(BaseModel):
+    transaction_id: str
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
+class ActivityStatsResponse(BaseModel):
+    stamps_today: int = 0
+    rewards_today: int = 0
+    total_this_week: int = 0
+    active_customers_today: int = 0
+    latest_transaction_at: Optional[datetime] = None
 
 
 # Public customer registration (no auth required)

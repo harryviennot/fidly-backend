@@ -1,1 +1,1 @@
-from .schemas import CustomerCreate, CustomerResponse, StampResponse, DeviceRegistration
+from .schemas import CustomerResponse, StampResponse, DeviceRegistration
