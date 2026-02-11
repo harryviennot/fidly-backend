@@ -119,6 +119,7 @@ class TransactionResponse(BaseModel):
     business_id: str
     customer_id: str
     employee_id: Optional[str] = None
+    employee_name: Optional[str] = None
     type: str
     stamp_delta: int
     stamps_before: int
