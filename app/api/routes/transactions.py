@@ -8,18 +8,33 @@ from database.connection import get_db
 router = APIRouter()
 
 
-def _enrich_employee_names(rows: list[dict]) -> None:
-    """Batch-fetch employee names from public.users and attach to rows."""
-    employee_ids = list({r["employee_id"] for r in rows if r.get("employee_id")})
-    if not employee_ids:
-        for r in rows:
-            r["employee_name"] = None
-        return
+def _enrich_rows(rows: list[dict]) -> None:
+    """Batch-fetch employee names and customer info, then attach to rows."""
     db = get_db()
-    result = db.table("users").select("id, name").in_("id", employee_ids).execute()
-    name_map = {u["id"]: u["name"] for u in (result.data or [])}
+
+    # Employee names
+    employee_ids = list({r["employee_id"] for r in rows if r.get("employee_id")})
+    name_map: dict[str, str] = {}
+    if employee_ids:
+        result = db.table("users").select("id, name").in_("id", employee_ids).execute()
+        name_map = {u["id"]: u["name"] for u in (result.data or [])}
+
+    # Customer info
+    customer_ids = list({r["customer_id"] for r in rows if r.get("customer_id")})
+    customer_map: dict[str, dict] = {}
+    if customer_ids:
+        result = db.table("customers").select("id, name, email").in_("id", customer_ids).execute()
+        customer_map = {c["id"]: c for c in (result.data or [])}
+
     for r in rows:
         r["employee_name"] = name_map.get(r.get("employee_id"))
+
+        # Inject customer attributes into metadata for display
+        cust = customer_map.get(r.get("customer_id"), {})
+        meta = dict(r.get("metadata") or {})
+        meta["customer_name"] = cust.get("name")
+        meta["customer_email"] = cust.get("email")
+        r["metadata"] = meta
 
 
 @router.get("/{business_id}/stats", response_model=ActivityStatsResponse)
@@ -35,7 +50,6 @@ def get_activity_stats(
 def list_business_transactions(
     customer_id: str | None = Query(None),
     type: str | None = Query(None),
-    search: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     ctx: BusinessAccessContext = Depends(require_any_access),
@@ -45,11 +59,10 @@ def list_business_transactions(
         business_id=ctx.business_id,
         customer_id=customer_id,
         type_filter=type,
-        search=search,
         limit=limit,
         offset=offset,
     )
-    _enrich_employee_names(rows)
+    _enrich_rows(rows)
     return TransactionListResponse(
         transactions=[TransactionResponse(**r) for r in rows],
         total_count=total,
@@ -73,7 +86,7 @@ def list_customer_transactions(
         limit=limit,
         offset=offset,
     )
-    _enrich_employee_names(rows)
+    _enrich_rows(rows)
     return TransactionListResponse(
         transactions=[TransactionResponse(**r) for r in rows],
         total_count=total,

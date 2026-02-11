@@ -50,7 +50,6 @@ class TransactionRepository:
         business_id: str,
         customer_id: str | None = None,
         type_filter: str | None = None,
-        search: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[dict], int]:
@@ -61,8 +60,6 @@ class TransactionRepository:
             query = query.eq("customer_id", customer_id)
         if type_filter:
             query = query.eq("type", type_filter)
-        if search:
-            query = query.ilike("metadata->>customer_name", f"%{search}%")
         result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
         rows = result.data if result and result.data else []
         total = result.count if result and result.count is not None else len(rows)
