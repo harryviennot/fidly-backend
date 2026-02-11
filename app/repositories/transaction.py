@@ -50,6 +50,7 @@ class TransactionRepository:
         business_id: str,
         customer_id: str | None = None,
         type_filter: str | None = None,
+        search: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[dict], int]:
@@ -60,10 +61,28 @@ class TransactionRepository:
             query = query.eq("customer_id", customer_id)
         if type_filter:
             query = query.eq("type", type_filter)
+        if search:
+            query = query.ilike("metadata->>customer_name", f"%{search}%")
         result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
         rows = result.data if result and result.data else []
         total = result.count if result and result.count is not None else len(rows)
         return rows, total
+
+    @staticmethod
+    @with_retry()
+    def get_activity_stats(business_id: str) -> dict:
+        """Get aggregate activity stats for the business dashboard."""
+        db = get_db()
+        result = db.rpc("get_activity_stats", {"p_business_id": business_id}).execute()
+        if result and result.data and len(result.data) > 0:
+            return result.data[0]
+        return {
+            "stamps_today": 0,
+            "rewards_today": 0,
+            "total_this_week": 0,
+            "active_customers_today": 0,
+            "latest_transaction_at": None,
+        }
 
     @staticmethod
     @with_retry()

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 
-from app.domain.schemas import TransactionListResponse, TransactionResponse
+from app.domain.schemas import ActivityStatsResponse, TransactionListResponse, TransactionResponse
 from app.repositories.transaction import TransactionRepository
 from app.core.permissions import require_any_access, BusinessAccessContext
 from database.connection import get_db
@@ -22,10 +22,20 @@ def _enrich_employee_names(rows: list[dict]) -> None:
         r["employee_name"] = name_map.get(r.get("employee_id"))
 
 
+@router.get("/{business_id}/stats", response_model=ActivityStatsResponse)
+def get_activity_stats(
+    ctx: BusinessAccessContext = Depends(require_any_access),
+):
+    """Get aggregate activity stats for the dashboard."""
+    data = TransactionRepository.get_activity_stats(ctx.business_id)
+    return ActivityStatsResponse(**data)
+
+
 @router.get("/{business_id}", response_model=TransactionListResponse)
 def list_business_transactions(
     customer_id: str | None = Query(None),
     type: str | None = Query(None),
+    search: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     ctx: BusinessAccessContext = Depends(require_any_access),
@@ -35,6 +45,7 @@ def list_business_transactions(
         business_id=ctx.business_id,
         customer_id=customer_id,
         type_filter=type,
+        search=search,
         limit=limit,
         offset=offset,
     )

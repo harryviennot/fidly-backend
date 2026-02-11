@@ -141,6 +141,14 @@ class VoidStampRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=500)
 
 
+class ActivityStatsResponse(BaseModel):
+    stamps_today: int = 0
+    rewards_today: int = 0
+    total_this_week: int = 0
+    active_customers_today: int = 0
+    latest_transaction_at: Optional[datetime] = None
+
+
 # Public customer registration (no auth required)
 class CustomerPublicCreate(BaseModel):
     """Request body for public customer registration."""
