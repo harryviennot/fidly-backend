@@ -26,6 +26,26 @@ DEMO_TOTAL_STAMPS = 8
 DEMO_HERO_PATH = "stampeo/demo/strips/google"
 DEMO_LOGO_PATH = "stampeo/demo/logo.png"
 
+# Bilingual strings for demo pass (French primary, English translation)
+DEMO_STRINGS = {
+    "stamps_header": {"fr": "TAMPONS", "en": "STAMPS"},
+    "reward_header": {"fr": "RÉCOMPENSE", "en": "REWARD"},
+    "reward_completed": {"fr": "30 jours gratuits !", "en": "30 days free!"},
+    "reward_pending": {"fr": "30 jours d'essai gratuit", "en": "30 days free trial"},
+    "location_header": {"fr": "Adresse", "en": "Location"},
+    "location_body": {"fr": "123 Rue Principale, Paris 75001", "en": "123 Main Street, Paris 75001"},
+    "hours_header": {"fr": "Horaires", "en": "Opening Hours"},
+    "hours_body": {"fr": "Lun-Ven : 8h-19h, Sam-Dim : 9h-17h", "en": "Mon-Fri: 8am-7pm, Sat-Sun: 9am-5pm"},
+    "website_header": {"fr": "Site web", "en": "Website"},
+    "contact_header": {"fr": "Contact", "en": "Contact"},
+    "phone_header": {"fr": "Téléphone", "en": "Phone"},
+    "card_title": {"fr": "Stampeo", "en": "Stampeo"},
+    "card_header": {"fr": "Carte Démo Interactive", "en": "Interactive Demo Card"},
+    "hero_desc": {"fr": "{stamps}/{total} tampons", "en": "{stamps}/{total} stamps"},
+    "logo_desc": {"fr": "Logo Stampeo", "en": "Stampeo logo"},
+    "link_desc": {"fr": "Visiter Stampeo", "en": "Visit Stampeo"},
+}
+
 
 class DemoGoogleWalletService:
     """
@@ -73,6 +93,16 @@ class DemoGoogleWalletService:
                 timeout=30.0,
             )
         return self._http_client
+
+    @staticmethod
+    def _demo_localized(fr_value: str, en_value: str) -> dict:
+        """Build a Google Wallet localizedString with French default and English translation."""
+        result: dict = {
+            "defaultValue": {"language": "fr", "value": fr_value}
+        }
+        if fr_value != en_value:
+            result["translatedValues"] = [{"language": "en", "value": en_value}]
+        return result
 
     def _get_class_id(self) -> str:
         """Get the demo class ID."""
@@ -135,8 +165,12 @@ class DemoGoogleWalletService:
                 "uris": [
                     {
                         "uri": "https://stampeo.app",
-                        "description": "Visit Stampeo",
-                        "id": "website"
+                        "description": DEMO_STRINGS["link_desc"]["fr"],
+                        "localizedDescription": self._demo_localized(
+                            DEMO_STRINGS["link_desc"]["fr"],
+                            DEMO_STRINGS["link_desc"]["en"],
+                        ),
+                        "id": "website",
                     }
                 ]
             },
@@ -157,47 +191,67 @@ class DemoGoogleWalletService:
         Build GenericObject payload for a demo customer.
 
         Uses pre-generated hero images from Supabase Storage.
+        French as default language, English via translatedValues.
         """
+        S = DEMO_STRINGS
+        L = self._demo_localized
         class_id = self._get_class_id()
         object_id = self._get_object_id(customer_id)
 
         # Determine reward text
         if stamp_count >= DEMO_TOTAL_STAMPS:
-            reward_text = "30 days free!"
+            reward_fr = S["reward_completed"]["fr"]
+            reward_en = S["reward_completed"]["en"]
         else:
-            reward_text = "30 days free trial"
+            reward_fr = S["reward_pending"]["fr"]
+            reward_en = S["reward_pending"]["en"]
 
         text_modules = [
             {
                 "id": "stamps",
-                "header": "STAMPS",
+                "header": S["stamps_header"]["fr"],
+                "localizedHeader": L(S["stamps_header"]["fr"], S["stamps_header"]["en"]),
                 "body": f"{stamp_count} / {DEMO_TOTAL_STAMPS}",
             },
             {
                 "id": "reward",
-                "header": "REWARD",
-                "body": reward_text,
+                "header": S["reward_header"]["fr"],
+                "localizedHeader": L(S["reward_header"]["fr"], S["reward_header"]["en"]),
+                "body": reward_fr,
+                "localizedBody": L(reward_fr, reward_en),
             },
             # Back fields (shown in details section)
             {
                 "id": "location",
-                "header": "Location",
-                "body": "123 Main Street, Paris 75001",
+                "header": S["location_header"]["fr"],
+                "localizedHeader": L(S["location_header"]["fr"], S["location_header"]["en"]),
+                "body": S["location_body"]["fr"],
+                "localizedBody": L(S["location_body"]["fr"], S["location_body"]["en"]),
             },
             {
                 "id": "hours",
-                "header": "Opening Hours",
-                "body": "Mon-Fri: 8am-7pm, Sat-Sun: 9am-5pm",
+                "header": S["hours_header"]["fr"],
+                "localizedHeader": L(S["hours_header"]["fr"], S["hours_header"]["en"]),
+                "body": S["hours_body"]["fr"],
+                "localizedBody": L(S["hours_body"]["fr"], S["hours_body"]["en"]),
             },
             {
                 "id": "website",
-                "header": "Website",
+                "header": S["website_header"]["fr"],
+                "localizedHeader": L(S["website_header"]["fr"], S["website_header"]["en"]),
                 "body": "www.stampeo.app",
             },
             {
                 "id": "contact",
-                "header": "Contact",
-                "body": "harry@stampeo.app",
+                "header": S["contact_header"]["fr"],
+                "localizedHeader": L(S["contact_header"]["fr"], S["contact_header"]["en"]),
+                "body": "harry.viennot@icloud.com",
+            },
+            {
+                "id": "phone",
+                "header": S["phone_header"]["fr"],
+                "localizedHeader": L(S["phone_header"]["fr"], S["phone_header"]["en"]),
+                "body": "06 49 37 04 70",
             },
         ]
 
@@ -205,12 +259,9 @@ class DemoGoogleWalletService:
         hero_url = self._get_hero_url(stamp_count)
         logo_url = self._get_logo_url()
 
-        logo_content_description = {
-            "defaultValue": {
-                "language": "en",
-                "value": "Stampeo logo"
-            }
-        }
+        hero_fr = S["hero_desc"]["fr"].format(stamps=stamp_count, total=DEMO_TOTAL_STAMPS)
+        hero_en = S["hero_desc"]["en"].format(stamps=stamp_count, total=DEMO_TOTAL_STAMPS)
+        logo_content_description = L(S["logo_desc"]["fr"], S["logo_desc"]["en"])
 
         return {
             "id": object_id,
@@ -219,12 +270,7 @@ class DemoGoogleWalletService:
             "textModulesData": text_modules,
             "heroImage": {
                 "sourceUri": {"uri": hero_url},
-                "contentDescription": {
-                    "defaultValue": {
-                        "language": "en",
-                        "value": f"{stamp_count}/{DEMO_TOTAL_STAMPS} stamps"
-                    }
-                }
+                "contentDescription": L(hero_fr, hero_en),
             },
             "logo": {
                 "sourceUri": {"uri": logo_url},
@@ -234,18 +280,8 @@ class DemoGoogleWalletService:
                 "sourceUri": {"uri": logo_url},
                 "contentDescription": logo_content_description,
             },
-            "cardTitle": {
-                "defaultValue": {
-                    "language": "en",
-                    "value": "Stampeo"
-                }
-            },
-            "header": {
-                "defaultValue": {
-                    "language": "en",
-                    "value": "Interactive Demo Card"
-                }
-            },
+            "cardTitle": L(S["card_title"]["fr"], S["card_title"]["en"]),
+            "header": L(S["card_header"]["fr"], S["card_header"]["en"]),
             "hexBackgroundColor": DEMO_BLACK,
             "barcode": {
                 "type": "QR_CODE",
