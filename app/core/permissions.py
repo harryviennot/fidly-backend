@@ -115,3 +115,38 @@ def require_business_access(role: Optional[str] = None):
 require_any_access = require_business_access()
 require_owner_access = require_business_access(role="owner")
 require_scanner_access = require_business_access(role="scanner")
+
+
+def _require_management_access(
+    business_id: str,
+    user: dict = Depends(get_current_user_profile),
+) -> BusinessAccessContext:
+    """Allow owner and admin roles, but not scanner."""
+    membership = MembershipRepository.get_membership(user["id"], business_id)
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this business",
+        )
+
+    if membership["role"] not in ("owner", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This action requires 'owner' or 'admin' role",
+        )
+
+    business = BusinessRepository.get_by_id(business_id)
+    if not business or business.get("status") != "active":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your business account is pending activation. You'll receive an email when approved.",
+        )
+
+    return BusinessAccessContext(
+        user=user,
+        membership=membership,
+        business_id=business_id,
+    )
+
+
+require_management_access = _require_management_access
