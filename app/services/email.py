@@ -265,6 +265,76 @@ class EmailService:
             raise
 
 
+    def send_contact_email(
+        self,
+        name: str,
+        email: str,
+        subject: str,
+        message: str,
+    ) -> bool:
+        """Send a contact form submission to the Stampeo contact inbox."""
+        import os
+        contact_to = os.getenv("CONTACT_EMAIL", "contact@stampeo.app")
+
+        # Escape HTML in user-provided fields
+        import html
+        safe_name = html.escape(name)
+        safe_email = html.escape(email)
+        safe_subject = html.escape(subject)
+        safe_message = html.escape(message).replace("\n", "<br>")
+
+        html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); padding: 30px; border-radius: 10px 10px 0 0;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">New Contact Form Message</h1>
+    </div>
+    <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <tr>
+                <td style="padding: 8px 12px; font-weight: 600; color: #666; width: 80px; vertical-align: top;">From</td>
+                <td style="padding: 8px 12px;">{safe_name} &lt;{safe_email}&gt;</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px 12px; font-weight: 600; color: #666; vertical-align: top;">Subject</td>
+                <td style="padding: 8px 12px;">{safe_subject}</td>
+            </tr>
+        </table>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+        <div style="font-size: 15px; line-height: 1.7;">
+            {safe_message}
+        </div>
+    </div>
+    <div style="text-align: center; padding: 20px;">
+        <p style="font-size: 12px; color: #999; margin: 0;">
+            Sent via Stampeo contact form
+        </p>
+    </div>
+</body>
+</html>
+"""
+
+        try:
+            logger.info(f"Sending contact form email from {email} (subject: {subject})")
+            result = resend.Emails.send({
+                "from": "Stampeo Contact <noreply@contact.stampeo.app>",
+                "to": [contact_to],
+                "reply_to": email,
+                "subject": f"[Contact] {subject}",
+                "html": html_content,
+            })
+            logger.info(f"Contact email sent successfully: {result}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send contact email from {email}: {e}")
+            raise
+
+
 # Singleton instance
 _email_service: EmailService | None = None
 
