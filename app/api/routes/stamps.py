@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 
 from app.domain.schemas import StampResponse, VoidStampRequest
 from app.repositories.customer import CustomerRepository
@@ -10,6 +10,7 @@ from app.repositories.membership import MembershipRepository
 from app.repositories.transaction import TransactionRepository
 from app.services.wallets import PassCoordinator, create_pass_coordinator
 from app.core.permissions import require_any_access, BusinessAccessContext
+from app.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,9 @@ def get_pass_coordinator() -> PassCoordinator:
 
 
 @router.post("/{business_id}/{customer_id}", response_model=StampResponse)
+@limiter.limit("60/minute")
 async def add_customer_stamp(
+    request: Request,
     customer_id: str,
     ctx: BusinessAccessContext = Depends(require_any_access),
     coordinator: PassCoordinator = Depends(get_pass_coordinator),
@@ -188,14 +191,17 @@ async def redeem_customer_reward(
 
     if business and design:
         try:
-            await coordinator.on_stamp_added(
+            wallet_result = await coordinator.on_stamp_added(
                 customer=updated_customer,
                 business=business,
                 design=design,
             )
+            logger.info(f"[Stamps] Redemption wallet update result: {wallet_result}")
         except Exception as e:
             # Don't fail the redeem operation if wallet update fails
             logger.error(f"[Stamps] Wallet update error on redemption: {e}", exc_info=True)
+    else:
+        logger.warning(f"[Stamps] Skipping wallet update on redeem: business={bool(business)}, design={bool(design)}")
 
     return StampResponse(
         customer_id=customer_id,

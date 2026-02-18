@@ -14,6 +14,7 @@ from app.repositories.card_design import CardDesignRepository
 from app.services.email import get_email_service
 from app.services.wallets import create_pass_coordinator
 from app.core.config import settings
+from app.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,8 @@ def send_contact(request: Request, data: ContactFormRequest):
 
 
 @router.post("/customers/{business_id}", response_model=CustomerPublicResponse)
-def register_customer(business_id: str, data: CustomerPublicCreate):
+@limiter.limit("10/minute")
+def register_customer(request: Request, business_id: str, data: CustomerPublicCreate):
     """
     Public customer registration endpoint.
 

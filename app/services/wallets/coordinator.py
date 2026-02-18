@@ -88,7 +88,7 @@ class PassCoordinator:
                 stamp_count=stamp_count,
             )
         except Exception as e:
-            print(f"Error generating Google Wallet URL: {e}")
+            logger.error(f"Error generating Google Wallet URL: {e}")
             google_url = None
 
         return {
@@ -257,14 +257,14 @@ class PassCoordinator:
                 except Exception as e:
                     logger.warning(f"Failed to cache strip images: {e}")
             except Exception as e:
-                print(f"Strip regeneration error: {e}")
+                logger.error(f"Strip regeneration error: {e}")
 
         # Update Google Wallet class
         try:
             await asyncio.to_thread(self.google.create_or_update_class, business, design)
             results["google_class_updated"] = True
         except Exception as e:
-            print(f"Google class update error: {e}")
+            logger.error(f"Google class update error: {e}")
 
         # Notify all Apple Wallet customers
         try:
@@ -272,7 +272,7 @@ class PassCoordinator:
                 business_id
             )
         except Exception as e:
-            print(f"Apple notifications error: {e}")
+            logger.error(f"Apple notifications error: {e}")
             results["apple_notifications"] = {"error": str(e)}
 
         # Update all Google Wallet objects (CPU/IO-bound, run in thread)
@@ -294,7 +294,7 @@ class PassCoordinator:
                         )
                         count += 1
                 except Exception as e:
-                    print(f"Google object update error for {reg.get('customer_id')}: {e}")
+                    logger.error(f"Google object update error for {reg.get('customer_id')}: {e}")
             return count
 
         results["google_objects_updated"] = await asyncio.to_thread(_update_google_objects)
@@ -329,19 +329,19 @@ class PassCoordinator:
 
         if not results["strips_exist"]:
             # Strips don't exist, generate them now (shouldn't happen normally)
-            print(f"Warning: Strips missing for design {design['id']}, generating...")
+            logger.warning(f"Strips missing for design {design['id']}, generating...")
             try:
                 self.strips.pregenerate_all_strips(design, business["id"])
                 results["strips_exist"] = True
             except Exception as e:
-                print(f"Strip generation error: {e}")
+                logger.error(f"Strip generation error: {e}")
 
         # Update Google Wallet class with new design
         try:
             self.google.create_or_update_class(business, design)
             results["google_class_updated"] = True
         except Exception as e:
-            print(f"Google class update error: {e}")
+            logger.error(f"Google class update error: {e}")
 
         return results
 

@@ -1,5 +1,8 @@
 import asyncio
+import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, BackgroundTasks
+
+logger = logging.getLogger(__name__)
 
 from app.domain.schemas import (
     CardDesignCreate,
@@ -102,13 +105,15 @@ def get_design(
 @router.post("/{business_id}", response_model=CardDesignResponse)
 def create_design(
     data: CardDesignCreate,
+    background_tasks: BackgroundTasks,
     ctx: BusinessAccessContext = Depends(require_owner_access),
     _entitlement: BusinessAccessContext = Depends(require_can_create_design),
     coordinator: PassCoordinator = Depends(get_pass_coordinator),
 ):
     """Create a new card design for a business (requires owner role and plan allowance).
 
-    Pre-generates strip images for both Apple and Google Wallet (synchronous).
+    Pre-generates strip images in the background. Design starts with strip_status='regenerating'
+    and becomes 'ready' once generation completes. Activation is blocked until ready.
     """
     # Convert PassField objects to dicts for storage
     secondary_fields = [f.model_dump() for f in data.secondary_fields]
@@ -149,12 +154,19 @@ def create_design(
     if not design:
         raise HTTPException(status_code=500, detail="Failed to create design")
 
-    # Pre-generate strip images for both Apple and Google Wallet (synchronous)
-    try:
-        coordinator.pregenerate_strips_for_design(design, ctx.business_id)
-    except Exception as e:
-        print(f"Strip pre-generation error: {e}")
-        # Don't fail design creation if strip generation fails
+    # Pre-generate strip images in the background
+    CardDesignRepository.update(design["id"], strip_status="regenerating")
+    design["strip_status"] = "regenerating"
+
+    def pregenerate_strips():
+        try:
+            coordinator.pregenerate_strips_for_design(design, ctx.business_id)
+            CardDesignRepository.update(design["id"], strip_status="ready")
+        except Exception as e:
+            logger.error(f"Strip pre-generation error: {e}")
+            CardDesignRepository.update(design["id"], strip_status="ready")
+
+    background_tasks.add_task(pregenerate_strips)
 
     return _design_to_response(design)
 
@@ -231,7 +243,7 @@ async def update_design(
                     regenerate_strips=affects_strips,
                 )
             except Exception as e:
-                print(f"Background design update error: {e}")
+                logger.error(f"Background design update error: {e}")
 
         background_tasks.add_task(regenerate_and_notify)
 
@@ -244,7 +256,7 @@ async def update_design(
                 coordinator.pregenerate_strips_for_design(design, ctx.business_id)
                 CardDesignRepository.update(design_id, strip_status="ready")
             except Exception as e:
-                print(f"Strip regeneration error: {e}")
+                logger.error(f"Strip regeneration error: {e}")
                 CardDesignRepository.update(design_id, strip_status="ready")
 
         background_tasks.add_task(regenerate_inactive)
@@ -345,7 +357,7 @@ async def activate_design(
                 regenerate_strips=not result.get("strips_exist", False),
             )
         except Exception as e:
-            print(f"Customer notification error: {e}")
+            logger.error(f"Customer notification error: {e}")
 
     background_tasks.add_task(notify_all_customers)
 

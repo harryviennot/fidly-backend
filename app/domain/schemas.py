@@ -106,6 +106,13 @@ class CustomerResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class PaginatedCustomerResponse(BaseModel):
+    data: List[CustomerResponse]
+    total: int
+    limit: int
+    offset: int
+
+
 class StampResponse(BaseModel):
     customer_id: str
     name: str

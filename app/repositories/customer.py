@@ -58,23 +58,15 @@ class CustomerRepository:
     @staticmethod
     @with_retry()
     def add_stamp(customer_id: str, max_stamps: int = 10) -> int:
-        """Add a stamp to a customer. Returns the new stamp count."""
+        """Add a stamp to a customer atomically. Returns the new stamp count."""
         db = get_db()
-        # Get current stamps
-        customer = db.table("customers").select("stamps").eq("id", customer_id).limit(1).execute()
-        if not customer or not customer.data:
+        result = db.rpc("increment_stamps", {
+            "p_customer_id": customer_id,
+            "p_max_stamps": max_stamps,
+        }).execute()
+        if not result or result.data is None:
             raise ValueError("Customer not found")
-
-        current_stamps = customer.data[0]["stamps"]
-        new_stamps = min(current_stamps + 1, max_stamps)
-
-        # Update stamps and updated_at to trigger pass refresh
-        db.table("customers").update({
-            "stamps": new_stamps,
-            "updated_at": "now()"
-        }).eq("id", customer_id).execute()
-
-        return new_stamps
+        return result.data
 
     @staticmethod
     @with_retry()
@@ -90,33 +82,37 @@ class CustomerRepository:
     @staticmethod
     @with_retry()
     def void_stamp(customer_id: str) -> int:
-        """Decrement stamps by 1 (min 0). Returns the new stamp count."""
+        """Decrement stamps by 1 atomically (min 0). Returns the new stamp count."""
         db = get_db()
-        customer = db.table("customers").select("stamps").eq("id", customer_id).limit(1).execute()
-        if not customer or not customer.data:
+        result = db.rpc("decrement_stamps", {
+            "p_customer_id": customer_id,
+        }).execute()
+        if not result or result.data is None:
             raise ValueError("Customer not found")
-
-        new_stamps = max(customer.data[0]["stamps"] - 1, 0)
-        db.table("customers").update({
-            "stamps": new_stamps,
-            "updated_at": "now()"
-        }).eq("id", customer_id).execute()
-        return new_stamps
+        return result.data
 
     @staticmethod
     @with_retry()
     def increment_redemptions(customer_id: str) -> None:
-        """Increment total_redemptions by 1."""
+        """Increment total_redemptions by 1 atomically."""
         db = get_db()
-        customer = db.table("customers").select("total_redemptions").eq("id", customer_id).limit(1).execute()
-        if not customer or not customer.data:
-            raise ValueError("Customer not found")
+        db.rpc("increment_redemptions", {
+            "p_customer_id": customer_id,
+        }).execute()
 
-        current = customer.data[0].get("total_redemptions", 0)
-        db.table("customers").update({
-            "total_redemptions": current + 1,
-            "updated_at": "now()"
-        }).eq("id", customer_id).execute()
+    @staticmethod
+    @with_retry()
+    def get_paginated(business_id: str, limit: int = 50, offset: int = 0) -> dict:
+        """Get paginated customers for a business. Returns {data, total}."""
+        db = get_db()
+        query = db.table("customers").select("*", count="exact").eq(
+            "business_id", business_id
+        ).order("created_at", desc=True).range(offset, offset + limit - 1)
+        result = query.execute()
+        return {
+            "data": result.data if result and result.data else [],
+            "total": result.count if result else 0,
+        }
 
     @staticmethod
     @with_retry()

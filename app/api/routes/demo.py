@@ -23,6 +23,7 @@ from app.services.apns import APNsClient, create_demo_apns_client
 from app.services.demo_events import register_session, unregister_session, push_update
 from app.core.security import verify_auth_token
 from app.core.config import settings
+from app.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,8 @@ router = APIRouter()
 # ============================================
 
 @router.post("/sessions")
-def create_demo_session():
+@limiter.limit("20/minute")
+def create_demo_session(request: Request):
     """Create a new demo session. Returns session token for QR code."""
     session = DemoSessionRepository.create()
     if not session:
@@ -306,7 +308,7 @@ async def schedule_followup_notification(
     apns_client = create_demo_apns_client()
     await apns_client.send_to_all_devices(current_tokens)
 
-    print(f"Follow-up notification sent for demo customer {demo_customer_id[:8]}...")
+    logger.info(f"Follow-up notification sent for demo customer {demo_customer_id[:8]}...")
 
 
 @router.post("/wallet/v1/devices/{device_library_id}/registrations/{pass_type_id}/{serial_number}")
@@ -350,7 +352,7 @@ async def register_demo_device(
                 schedule_followup_notification(serial_number, push_tokens)
             )
 
-    print(f"Demo device registered: {device_library_id[:20]}... for customer {serial_number[:8]}...")
+    logger.info(f"Demo device registered: {device_library_id[:20]}... for customer {serial_number[:8]}...")
 
     return Response(status_code=201)
 
@@ -373,7 +375,7 @@ def unregister_demo_device(
 
     DemoDeviceRepository.unregister(serial_number, device_library_id)
 
-    print(f"Demo device unregistered: {device_library_id[:20]}...")
+    logger.info(f"Demo device unregistered: {device_library_id[:20]}...")
 
     return Response(status_code=200)
 
@@ -442,11 +444,12 @@ def get_latest_demo_pass(
 
 
 @router.post("/wallet/v1/log")
-def receive_demo_logs(body: dict = Body(...)):
+@limiter.limit("30/minute")
+def receive_demo_logs(request: Request, body: dict = Body(...)):
     """Receive error logs from Apple Wallet for demo passes."""
     logs = body.get("logs", [])
     for log in logs:
-        print(f"Demo wallet log: {log}")
+        logger.info(f"Demo wallet log: {log}")
     return Response(status_code=200)
 
 
