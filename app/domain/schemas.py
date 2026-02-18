@@ -397,6 +397,14 @@ class InvitationResponse(BaseModel):
     inviter: Optional[UserResponse] = None
 
 
+class ContactFormRequest(BaseModel):
+    """Request body for the public contact form."""
+    name: str = Field(..., min_length=1, max_length=200)
+    email: EmailStr
+    subject: str = Field(..., min_length=1, max_length=300)
+    message: str = Field(..., min_length=1, max_length=5000)
+
+
 class InvitationPublicResponse(BaseModel):
     """Public response for invitation acceptance page (no sensitive data)."""
     id: str

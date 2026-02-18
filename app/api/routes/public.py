@@ -2,10 +2,12 @@
 
 import secrets
 import logging
+import time
+from collections import defaultdict
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
-from app.domain.schemas import CustomerPublicCreate, CustomerPublicResponse
+from app.domain.schemas import ContactFormRequest, CustomerPublicCreate, CustomerPublicResponse
 from app.repositories.business import BusinessRepository
 from app.repositories.customer import CustomerRepository
 from app.repositories.card_design import CardDesignRepository
@@ -16,6 +18,41 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Simple in-memory rate limiting for contact form
+_contact_rate_limit: dict[str, list[float]] = defaultdict(list)
+CONTACT_RATE_LIMIT_MAX = 3
+CONTACT_RATE_LIMIT_WINDOW = 600  # 10 minutes
+
+
+@router.post("/contact")
+def send_contact(request: Request, data: ContactFormRequest):
+    """Public contact form endpoint. Rate-limited to 3 per IP per 10 minutes."""
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+
+    # Clean old entries and check rate limit
+    _contact_rate_limit[client_ip] = [
+        t for t in _contact_rate_limit[client_ip] if now - t < CONTACT_RATE_LIMIT_WINDOW
+    ]
+    if len(_contact_rate_limit[client_ip]) >= CONTACT_RATE_LIMIT_MAX:
+        raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
+
+    _contact_rate_limit[client_ip].append(now)
+
+    try:
+        email_service = get_email_service()
+        email_service.send_contact_email(
+            name=data.name,
+            email=data.email,
+            subject=data.subject,
+            message=data.message,
+        )
+    except Exception as e:
+        logger.error(f"Contact form error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send message")
+
+    return {"status": "sent"}
 
 
 @router.post("/customers/{business_id}", response_model=CustomerPublicResponse)
