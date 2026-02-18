@@ -1,0 +1,20 @@
+name: Apply Database Migrations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "database/migrations/**"
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply pending migrations
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+        run: |
+          chmod +x database/migrate.sh
+          bash database/migrate.sh
