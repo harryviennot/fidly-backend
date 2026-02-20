@@ -49,3 +49,5 @@ uploads/designs/*
 dist/
 build/
 *.egg-info/
+
+supabase/
