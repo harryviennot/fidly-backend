@@ -3,10 +3,12 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 
 from app.repositories.program import ProgramRepository
 from app.repositories.business import BusinessRepository
+from app.repositories.card_design import CardDesignRepository
+from app.services.wallets import create_pass_coordinator
 from app.core.permissions import require_management_access, BusinessAccessContext
 from app.core.features import has_feature
 
@@ -92,6 +94,7 @@ def get_program(
 def update_program(
     program_id: str,
     body: dict,
+    background_tasks: BackgroundTasks,
     ctx: BusinessAccessContext = Depends(require_management_access),
 ):
     """Update a program."""
@@ -106,9 +109,45 @@ def update_program(
     if not updates:
         return program
 
+    # Detect total_stamps change
+    old_config = program.get("config", {})
+    if isinstance(old_config, str):
+        import json
+        old_config = json.loads(old_config)
+    old_total = old_config.get("total_stamps", 10)
+
+    new_config = updates.get("config")
+    new_total = new_config.get("total_stamps", old_total) if new_config else old_total
+    stamps_changed = new_total != old_total
+
     updated = ProgramRepository.update(program_id, **updates)
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update program")
+
+    # If total_stamps changed, sync to all designs and regenerate strips for active design
+    if stamps_changed:
+        designs = CardDesignRepository.get_all(ctx.business_id)
+        for d in designs:
+            CardDesignRepository.update(d["id"], total_stamps=new_total)
+
+        active_design = CardDesignRepository.get_active(ctx.business_id)
+        if active_design:
+            active_design["total_stamps"] = new_total
+            business = BusinessRepository.get_by_id(ctx.business_id)
+            coordinator = create_pass_coordinator()
+
+            async def regen_and_notify():
+                try:
+                    await coordinator.on_design_updated(
+                        business=business,
+                        design=active_design,
+                        regenerate_strips=True,
+                    )
+                except Exception as e:
+                    logger.error(f"Strip regeneration after stamps change: {e}")
+
+            background_tasks.add_task(regen_and_notify)
+
     return updated
 
 
