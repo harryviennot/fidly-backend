@@ -50,4 +50,4 @@ dist/
 build/
 *.egg-info/
 
-supabase/
+supabase
