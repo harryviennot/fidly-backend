@@ -37,12 +37,15 @@ def _parse_datetime(dt_value) -> datetime | None:
     return None
 
 
-def _get_last_modified(customer: dict, design: dict | None) -> datetime | None:
-    """Get the latest modification time between customer and design."""
-    customer_updated = _parse_datetime(customer.get("updated_at"))
-    design_updated = _parse_datetime(design.get("updated_at")) if design else None
+def _get_last_modified(customer: dict, design: dict | None, business: dict | None = None) -> datetime | None:
+    """Get the latest modification time between customer, design, and business."""
+    candidates = [
+        _parse_datetime(customer.get("updated_at")),
+        _parse_datetime(design.get("updated_at")) if design else None,
+        _parse_datetime(business.get("updated_at")) if business else None,
+    ]
 
-    timestamps = [t for t in [customer_updated, design_updated] if t is not None]
+    timestamps = [t for t in candidates if t is not None]
     return max(timestamps) if timestamps else None
 
 router = APIRouter()
@@ -118,11 +121,16 @@ def get_serial_numbers(
             since_dt = datetime.fromtimestamp(since_timestamp, tz=timezone.utc)
 
             filtered = []
+            business_cache = {}
             for serial_number in serial_numbers:
                 customer = CustomerRepository.get_by_id(serial_number)
                 if customer:
-                    design = CardDesignRepository.get_active(customer.get("business_id"))
-                    last_modified = _get_last_modified(customer, design)
+                    bid = customer.get("business_id")
+                    design = CardDesignRepository.get_active(bid)
+                    if bid not in business_cache:
+                        business_cache[bid] = BusinessRepository.get_by_id(bid)
+                    business = business_cache[bid]
+                    last_modified = _get_last_modified(customer, design, business)
 
                     # Include if modified after the given timestamp
                     if last_modified and last_modified > since_dt:
@@ -182,12 +190,15 @@ def get_latest_pass(
     translations = (design.get("translations") or {}) if design else None
 
     # Use per-business certs when business_id is available
+    business_settings = (business.get("settings") or {}) if business else None
+
     if business_id:
         pass_generator = create_pass_generator_for_business(
             business_id,
             design=design,
             primary_locale=primary_locale,
             translations=translations,
+            business_settings=business_settings,
         )
     else:
         pass_generator = create_pass_generator()
