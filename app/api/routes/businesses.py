@@ -27,11 +27,20 @@ def create_business(
     if existing:
         raise HTTPException(status_code=400, detail="URL slug already taken")
 
+    # Seed default data collection settings if not provided
+    final_settings = data.settings or {}
+    if "customer_data_collection" not in final_settings:
+        final_settings["customer_data_collection"] = {
+            "collect_name": True,
+            "collect_email": True,
+            "collect_phone": False,
+        }
+
     business = BusinessRepository.create(
         name=data.name,
         url_slug=data.url_slug,
         subscription_tier=data.subscription_tier,
-        settings=data.settings,
+        settings=final_settings,
     )
     if not business:
         raise HTTPException(status_code=500, detail="Failed to create business")

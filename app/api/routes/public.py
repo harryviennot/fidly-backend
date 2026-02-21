@@ -90,8 +90,10 @@ def register_customer(request: Request, business_id: str, data: CustomerPublicCr
     if data_collection.get("collect_phone") and not data.phone:
         raise HTTPException(status_code=400, detail="Phone number is required")
 
-    # Check if at least one identifier is provided (email or phone)
-    if not data.email and not data.phone:
+    # Only require identifiers if the business actually collects them
+    collect_email = data_collection.get("collect_email", False)
+    collect_phone = data_collection.get("collect_phone", False)
+    if (collect_email or collect_phone) and not data.email and not data.phone:
         raise HTTPException(
             status_code=400,
             detail="At least an email or phone number is required"
