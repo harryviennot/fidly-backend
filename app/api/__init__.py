@@ -6,16 +6,21 @@ from .routes import (
     customers,
     demo,
     designs,
+    enrollments,
+    events,
     google_wallet,
     health,
     invitations,
+    locations,
     memberships,
     onboarding,
     pass_type_ids,
     passes,
     profile,
+    programs,
     public,
     stamps,
+    sync,
     transactions,
     users,
     wallet,
@@ -52,6 +57,13 @@ api_router.include_router(public.router, prefix="/public", tags=["public"])
 
 # Demo endpoints (interactive landing page demo)
 api_router.include_router(demo.router, prefix="/demo", tags=["demo"])
+
+# Loyalty programs (v2 architecture)
+api_router.include_router(programs.router, prefix="/programs", tags=["programs"])
+api_router.include_router(enrollments.router, prefix="/enrollments", tags=["enrollments"])
+api_router.include_router(events.router, prefix="/events", tags=["events"])
+api_router.include_router(locations.router, prefix="/locations", tags=["locations"])
+api_router.include_router(sync.router, prefix="/sync", tags=["sync"])
 
 # Admin: certificate pool management
 api_router.include_router(pass_type_ids.router, prefix="/pass-type-ids", tags=["pass-type-ids"])

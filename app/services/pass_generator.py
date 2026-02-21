@@ -9,6 +9,7 @@ import httpx
 
 from app.services.strip_generator import StripImageGenerator, StripConfig
 from app.services.localization import get_system_string
+from app.services.business_info import render_business_info
 
 white = "rgb(255, 255, 255)"
 
@@ -38,6 +39,7 @@ class PassGenerator:
         design: dict | None = None,
         primary_locale: str = "fr",
         translations: dict | None = None,
+        business_settings: dict | None = None,
     ):
         self.team_id = team_id
         self.pass_type_id = pass_type_id
@@ -48,6 +50,7 @@ class PassGenerator:
         self.design = design
         self.primary_locale = primary_locale
         self.translations = translations or {}
+        self.business_settings = business_settings or {}
 
         # Use design values if available, otherwise fall back to defaults/params
         if design:
@@ -181,6 +184,14 @@ class PassGenerator:
         # Add auxiliary fields if any
         if auxiliary_fields:
             pass_json["storeCard"]["auxiliaryFields"] = auxiliary_fields
+
+        # Merge business info fields after design-specific back_fields
+        biz_info = self.business_settings.get("business_info", [])
+        if biz_info:
+            biz_fields = render_business_info(biz_info, self.primary_locale)
+            hidden_keys = set(design.get("hidden_business_info_keys", []) if design else [])
+            visible_biz_fields = [f for f in biz_fields if f["key"] not in hidden_keys]
+            back_fields = back_fields + visible_biz_fields
 
         # Add back fields if any
         if back_fields:
@@ -492,6 +503,7 @@ def create_pass_generator_for_business(
     design: dict | None = None,
     primary_locale: str = "fr",
     translations: dict | None = None,
+    business_settings: dict | None = None,
 ) -> PassGenerator:
     """Factory that loads per-business certs via CertificateManager."""
     from app.core.config import settings, get_public_base_url
@@ -514,6 +526,7 @@ def create_pass_generator_for_business(
         design=design,
         primary_locale=primary_locale,
         translations=translations,
+        business_settings=business_settings,
     )
 
 
@@ -525,12 +538,14 @@ def create_pass_generator_with_active_design(business_id: str | None = None) -> 
     design = None
     primary_locale = "fr"
     translations = None
+    business_settings = None
 
     if business_id:
         design = CardDesignRepository.get_active(business_id)
         business = BusinessRepository.get_by_id(business_id)
         if business:
             primary_locale = business.get("primary_locale", "fr")
+            business_settings = business.get("settings") or {}
         if design:
             translations = design.get("translations") or {}
 
@@ -540,5 +555,6 @@ def create_pass_generator_with_active_design(business_id: str | None = None) -> 
             design=design,
             primary_locale=primary_locale,
             translations=translations,
+            business_settings=business_settings,
         )
     return create_pass_generator(design=design)

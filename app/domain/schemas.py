@@ -102,6 +102,7 @@ class CustomerResponse(BaseModel):
     email: str
     stamps: int
     total_redemptions: int = 0
+    last_activity_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -423,3 +424,139 @@ class InvitationPublicResponse(BaseModel):
     business_name: str
     inviter_name: str
     is_expired: bool
+
+
+# ============================================
+# Loyalty Program Schemas (v2 Architecture)
+# ============================================
+
+class ProgramCreate(BaseModel):
+    """Request body for creating a loyalty program."""
+    name: str
+    type: str = Field(default="stamp", pattern=r'^(stamp|points|tiered)$')
+    is_active: bool = True
+    is_default: bool = False
+    config: dict = {}
+    reward_name: Optional[str] = None
+    reward_description: Optional[str] = None
+    back_fields: list[PassField] = []
+    translations: Optional[dict] = None
+
+
+class ProgramUpdate(BaseModel):
+    """Request body for updating a loyalty program."""
+    name: Optional[str] = None
+    type: Optional[str] = Field(default=None, pattern=r'^(stamp|points|tiered)$')
+    is_active: Optional[bool] = None
+    config: Optional[dict] = None
+    reward_name: Optional[str] = None
+    reward_description: Optional[str] = None
+    back_fields: Optional[list[PassField]] = None
+    translations: Optional[dict] = None
+
+
+class ProgramResponse(BaseModel):
+    """Response body for a loyalty program."""
+    id: str
+    business_id: str
+    name: str
+    type: str
+    is_active: bool
+    is_default: bool
+    config: dict = {}
+    reward_name: Optional[str] = None
+    reward_description: Optional[str] = None
+    back_fields: list = []
+    translations: dict = {}
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class EnrollmentResponse(BaseModel):
+    """Response body for a customer enrollment."""
+    id: str
+    customer_id: str
+    program_id: str
+    progress: dict = {}
+    status: str = "active"
+    total_redemptions: int = 0
+    last_activity_at: Optional[datetime] = None
+    enrolled_at: Optional[datetime] = None
+
+
+class PromotionalEventCreate(BaseModel):
+    """Request body for creating a promotional event."""
+    name: str
+    type: str = Field(..., pattern=r'^(multiplier|bonus|custom)$')
+    config: dict
+    starts_at: str
+    ends_at: str
+    program_id: Optional[str] = None
+    description: Optional[str] = None
+    announcement_title: Optional[str] = None
+    announcement_body: Optional[str] = None
+
+
+class PromotionalEventResponse(BaseModel):
+    """Response body for a promotional event."""
+    id: str
+    business_id: str
+    program_id: Optional[str] = None
+    name: str
+    description: Optional[str] = None
+    type: str
+    config: dict = {}
+    starts_at: datetime
+    ends_at: datetime
+    is_active: bool = True
+    announcement_title: Optional[str] = None
+    announcement_body: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class BusinessLocationCreate(BaseModel):
+    """Request body for creating a business location."""
+    name: str
+    address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    radius_meters: int = 100
+    is_primary: bool = False
+    metadata: dict = {}
+
+
+class BusinessLocationResponse(BaseModel):
+    """Response body for a business location."""
+    id: str
+    business_id: str
+    name: str
+    address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    radius_meters: int = 100
+    is_primary: bool = False
+    metadata: dict = {}
+    created_at: Optional[datetime] = None
+
+
+class OfflineSyncItem(BaseModel):
+    """A single item in an offline sync batch."""
+    client_id: str
+    customer_id: str
+    program_id: Optional[str] = None
+    action: str = Field(default="stamp", pattern=r'^(stamp|redeem|void)$')
+    payload: dict = {}
+    created_offline_at: str
+
+
+class OfflineSyncRequest(BaseModel):
+    """Request body for offline sync."""
+    items: List[OfflineSyncItem]
+
+
+class OfflineSyncResult(BaseModel):
+    """Result for a single sync item."""
+    client_id: str
+    status: str  # synced, failed, conflict, already_synced
+    transaction_id: Optional[str] = None
+    reason: Optional[str] = None

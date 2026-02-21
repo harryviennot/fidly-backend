@@ -1,10 +1,16 @@
+import logging
 import re
 
-from fastapi import APIRouter, HTTPException, Depends, File, UploadFile
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, File, UploadFile
+
+logger = logging.getLogger(__name__)
 
 from app.domain.schemas import BusinessCreate, BusinessUpdate, BusinessResponse
 from app.repositories.business import BusinessRepository
+from app.repositories.card_design import CardDesignRepository
 from app.repositories.membership import MembershipRepository
+from app.repositories.program import ProgramRepository
+from app.services.wallets import PassCoordinator, create_pass_coordinator
 from app.core.permissions import (
     get_current_user_profile,
     require_any_access,
@@ -14,6 +20,11 @@ from app.core.permissions import (
 from app.services.storage import get_storage_service
 
 router = APIRouter()
+
+
+def get_pass_coordinator() -> PassCoordinator:
+    """Dependency to get PassCoordinator."""
+    return create_pass_coordinator()
 
 
 @router.post("", response_model=BusinessResponse)
@@ -26,11 +37,20 @@ def create_business(
     if existing:
         raise HTTPException(status_code=400, detail="URL slug already taken")
 
+    # Seed default data collection settings if not provided
+    final_settings = data.settings or {}
+    if "customer_data_collection" not in final_settings:
+        final_settings["customer_data_collection"] = {
+            "collect_name": True,
+            "collect_email": True,
+            "collect_phone": False,
+        }
+
     business = BusinessRepository.create(
         name=data.name,
         url_slug=data.url_slug,
         subscription_tier=data.subscription_tier,
-        settings=data.settings,
+        settings=final_settings,
     )
     if not business:
         raise HTTPException(status_code=500, detail="Failed to create business")
@@ -40,6 +60,16 @@ def create_business(
         user_id=user["id"],
         business_id=business["id"],
         role="owner"
+    )
+
+    # Create default stamp program
+    ProgramRepository.create(
+        business_id=business["id"],
+        name=data.name,
+        type="stamp",
+        is_active=True,
+        is_default=True,
+        config={"total_stamps": 10},
     )
 
     # Handle logo: either copy from onboarding bucket or upload base64 directly
@@ -135,9 +165,11 @@ def get_signup_qr_code(ctx: BusinessAccessContext = Depends(require_any_access))
 
 
 @router.put("/{business_id}", response_model=BusinessResponse)
-def update_business(
+async def update_business(
     data: BusinessUpdate,
-    ctx: BusinessAccessContext = Depends(require_owner_access)
+    background_tasks: BackgroundTasks,
+    coordinator: PassCoordinator = Depends(get_pass_coordinator),
+    ctx: BusinessAccessContext = Depends(require_owner_access),
 ):
     """Update a business (requires owner role)."""
     existing = BusinessRepository.get_by_id(ctx.business_id)
@@ -151,6 +183,22 @@ def update_business(
     business = BusinessRepository.update(ctx.business_id, **update_data)
     if not business:
         raise HTTPException(status_code=500, detail="Failed to update business")
+
+    # If settings changed, notify all installed passes so they refresh
+    if "settings" in update_data:
+        active_design = CardDesignRepository.get_active(ctx.business_id)
+        if active_design:
+            async def notify():
+                try:
+                    await coordinator.on_design_updated(
+                        business=business,
+                        design=active_design,
+                        regenerate_strips=False,
+                    )
+                except Exception as e:
+                    logger.error(f"Background business settings update error: {e}")
+            background_tasks.add_task(notify)
+
     return BusinessResponse(**business)
 
 
