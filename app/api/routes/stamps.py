@@ -189,8 +189,6 @@ async def void_customer_stamp(
     The original transaction must be stamp_added or bonus_stamp, not already voided,
     and the customer must have stamps > 0.
 
-    Note: Void still uses direct repository calls since it operates on specific
-    transactions rather than program progress. Will be migrated in a future phase.
     """
     customer = CustomerRepository.get_by_id(customer_id)
     if not customer:
@@ -213,26 +211,23 @@ async def void_customer_stamp(
     if TransactionRepository.is_already_voided(body.transaction_id):
         raise HTTPException(status_code=409, detail="This transaction has already been voided")
 
-    if customer["stamps"] <= 0:
+    # Resolve enrollment for this customer's default program
+    from app.repositories.enrollment import EnrollmentRepository
+    program_service = ProgramService()
+    program = program_service.get_default_program(ctx.business_id)
+    if not program:
+        raise HTTPException(status_code=500, detail="No default program configured")
+
+    enrollment = EnrollmentRepository.get_by_customer_and_program(customer_id, program["id"])
+    if not enrollment:
+        raise HTTPException(status_code=400, detail="Customer has no enrollment to void")
+
+    stamps_before = enrollment.get("progress", {}).get("stamps", 0)
+    if stamps_before <= 0:
         raise HTTPException(status_code=400, detail="Customer has no stamps to void")
 
-    # Decrement stamp
-    stamps_before = customer["stamps"]
-    new_stamps = CustomerRepository.void_stamp(customer_id)
-
-    # Also update enrollment progress
-    try:
-        program_service = ProgramService()
-        program = program_service.get_default_program(ctx.business_id)
-        if program:
-            from app.repositories.enrollment import EnrollmentRepository
-            enrollment = EnrollmentRepository.get_by_customer_and_program(customer_id, program["id"])
-            if enrollment:
-                progress = dict(enrollment.get("progress", {}))
-                progress["stamps"] = max(progress.get("stamps", 0) - 1, 0)
-                EnrollmentRepository.update_progress(enrollment["id"], progress)
-    except Exception:
-        logger.warning("[Stamps] Failed to update enrollment on void", exc_info=True)
+    # Atomic decrement via RPC
+    new_stamps = EnrollmentRepository.void_stamp(enrollment["id"])
 
     # Log void transaction
     transaction_id = None

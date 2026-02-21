@@ -131,6 +131,18 @@ class EnrollmentRepository:
 
     @staticmethod
     @with_retry()
+    def void_stamp(enrollment_id: str) -> int:
+        """Decrement stamps by 1 atomically (min 0). Returns new stamp count."""
+        db = get_db()
+        result = db.rpc("decrement_enrollment_stamps", {
+            "p_enrollment_id": enrollment_id,
+        }).execute()
+        if not result or result.data is None:
+            raise ValueError("Enrollment not found")
+        return result.data
+
+    @staticmethod
+    @with_retry()
     def update_status(enrollment_id: str, status: str) -> dict | None:
         db = get_db()
         result = (
