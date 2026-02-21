@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, File, UploadFile
 from app.domain.schemas import BusinessCreate, BusinessUpdate, BusinessResponse
 from app.repositories.business import BusinessRepository
 from app.repositories.membership import MembershipRepository
+from app.repositories.program import ProgramRepository
 from app.core.permissions import (
     get_current_user_profile,
     require_any_access,
@@ -40,6 +41,16 @@ def create_business(
         user_id=user["id"],
         business_id=business["id"],
         role="owner"
+    )
+
+    # Create default stamp program
+    ProgramRepository.create(
+        business_id=business["id"],
+        name=data.name,
+        type="stamp",
+        is_active=True,
+        is_default=True,
+        config={"total_stamps": 10},
     )
 
     # Handle logo: either copy from onboarding bucket or upload base64 directly

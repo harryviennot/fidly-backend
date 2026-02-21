@@ -102,6 +102,7 @@ class CustomerResponse(BaseModel):
     email: str
     stamps: int
     total_redemptions: int = 0
+    last_activity_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

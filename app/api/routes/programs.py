@@ -19,8 +19,26 @@ router = APIRouter()
 def list_programs(
     ctx: BusinessAccessContext = Depends(require_management_access),
 ):
-    """List all loyalty programs for a business."""
-    return ProgramRepository.list_by_business(ctx.business_id)
+    """List all loyalty programs for a business.
+
+    Auto-creates a default stamp program if none exist (lazy init for
+    businesses created before the programs feature was added).
+    """
+    programs = ProgramRepository.list_by_business(ctx.business_id)
+    if not programs:
+        business = BusinessRepository.get_by_id(ctx.business_id)
+        name = business.get("name", "Loyalty Program") if business else "Loyalty Program"
+        program = ProgramRepository.create(
+            business_id=ctx.business_id,
+            name=name,
+            type="stamp",
+            is_active=True,
+            is_default=True,
+            config={"total_stamps": 10},
+        )
+        if program:
+            programs = [program]
+    return programs
 
 
 @router.post("/{business_id}")
