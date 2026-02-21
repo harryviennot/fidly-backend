@@ -185,13 +185,13 @@ class PassGenerator:
         if auxiliary_fields:
             pass_json["storeCard"]["auxiliaryFields"] = auxiliary_fields
 
-        # Merge business info fields before design-specific back_fields
+        # Merge business info fields after design-specific back_fields
         biz_info = self.business_settings.get("business_info", [])
         if biz_info:
             biz_fields = render_business_info(biz_info, self.primary_locale)
             hidden_keys = set(design.get("hidden_business_info_keys", []) if design else [])
             visible_biz_fields = [f for f in biz_fields if f["key"] not in hidden_keys]
-            back_fields = visible_biz_fields + back_fields
+            back_fields = back_fields + visible_biz_fields
 
         # Add back fields if any
         if back_fields:
