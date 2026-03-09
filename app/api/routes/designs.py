@@ -1,5 +1,8 @@
 import asyncio
+import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, BackgroundTasks
+
+logger = logging.getLogger(__name__)
 
 from app.domain.schemas import (
     CardDesignCreate,
@@ -10,6 +13,7 @@ from app.domain.schemas import (
 from app.repositories.card_design import CardDesignRepository
 from app.repositories.customer import CustomerRepository
 from app.repositories.business import BusinessRepository
+from app.repositories.program import ProgramRepository
 from app.services.storage import get_storage_service
 from app.services.wallets import PassCoordinator, create_pass_coordinator
 from app.core.permissions import (
@@ -27,8 +31,23 @@ def get_pass_coordinator() -> PassCoordinator:
     return create_pass_coordinator()
 
 
-def _design_to_response(design: dict) -> CardDesignResponse:
-    """Convert a design dict to a response with URLs."""
+def _get_program_total_stamps(business_id: str) -> int:
+    """Get total_stamps from the business's default program."""
+    program = ProgramRepository.get_default(business_id)
+    if program and program.get("config"):
+        config = program["config"]
+        if isinstance(config, str):
+            import json
+            config = json.loads(config)
+        return config.get("total_stamps", 10)
+    return 10
+
+
+def _design_to_response(design: dict, total_stamps: int | None = None) -> CardDesignResponse:
+    """Convert a design dict to a response with URLs.
+
+    total_stamps is sourced from the program, not the design.
+    """
     return CardDesignResponse(
         id=design["id"],
         name=design["name"],
@@ -40,7 +59,7 @@ def _design_to_response(design: dict) -> CardDesignResponse:
         foreground_color=design["foreground_color"],
         background_color=design["background_color"],
         label_color=design["label_color"],
-        total_stamps=design["total_stamps"],
+        total_stamps=total_stamps if total_stamps is not None else design.get("total_stamps", 10),
         stamp_filled_color=design["stamp_filled_color"],
         stamp_empty_color=design["stamp_empty_color"],
         stamp_border_color=design["stamp_border_color"],
@@ -66,7 +85,8 @@ def _design_to_response(design: dict) -> CardDesignResponse:
 def list_designs(ctx: BusinessAccessContext = Depends(require_any_access)):
     """Get all card designs for a business (requires membership)."""
     designs = CardDesignRepository.get_all(ctx.business_id)
-    return [_design_to_response(d) for d in designs]
+    total_stamps = _get_program_total_stamps(ctx.business_id)
+    return [_design_to_response(d, total_stamps) for d in designs]
 
 
 @router.get("/{business_id}/active", response_model=CardDesignResponse | None)
@@ -79,7 +99,8 @@ def get_active_design(business_id: str):
     design = CardDesignRepository.get_active(business_id)
     if not design:
         return None
-    return _design_to_response(design)
+    total_stamps = _get_program_total_stamps(business_id)
+    return _design_to_response(design, total_stamps)
 
 
 @router.get("/{business_id}/{design_id}", response_model=CardDesignResponse)
@@ -96,19 +117,22 @@ def get_design(
     if design.get("business_id") != ctx.business_id:
         raise HTTPException(status_code=404, detail="Design not found")
 
-    return _design_to_response(design)
+    total_stamps = _get_program_total_stamps(ctx.business_id)
+    return _design_to_response(design, total_stamps)
 
 
 @router.post("/{business_id}", response_model=CardDesignResponse)
 def create_design(
     data: CardDesignCreate,
+    background_tasks: BackgroundTasks,
     ctx: BusinessAccessContext = Depends(require_owner_access),
     _entitlement: BusinessAccessContext = Depends(require_can_create_design),
     coordinator: PassCoordinator = Depends(get_pass_coordinator),
 ):
     """Create a new card design for a business (requires owner role and plan allowance).
 
-    Pre-generates strip images for both Apple and Google Wallet (synchronous).
+    Pre-generates strip images in the background. Design starts with strip_status='regenerating'
+    and becomes 'ready' once generation completes. Activation is blocked until ready.
     """
     # Convert PassField objects to dicts for storage
     secondary_fields = [f.model_dump() for f in data.secondary_fields]
@@ -123,6 +147,9 @@ def create_design(
             for locale, t in data.translations.items()
         }
 
+    # total_stamps comes from the program, not the design request
+    program_total_stamps = _get_program_total_stamps(ctx.business_id)
+
     design = CardDesignRepository.create(
         business_id=ctx.business_id,
         name=data.name,
@@ -132,7 +159,7 @@ def create_design(
         foreground_color=data.foreground_color,
         background_color=data.background_color,
         label_color=data.label_color,
-        total_stamps=data.total_stamps,
+        total_stamps=program_total_stamps,
         stamp_filled_color=data.stamp_filled_color,
         stamp_empty_color=data.stamp_empty_color,
         stamp_border_color=data.stamp_border_color,
@@ -149,14 +176,21 @@ def create_design(
     if not design:
         raise HTTPException(status_code=500, detail="Failed to create design")
 
-    # Pre-generate strip images for both Apple and Google Wallet (synchronous)
-    try:
-        coordinator.pregenerate_strips_for_design(design, ctx.business_id)
-    except Exception as e:
-        print(f"Strip pre-generation error: {e}")
-        # Don't fail design creation if strip generation fails
+    # Pre-generate strip images in the background
+    CardDesignRepository.update(design["id"], strip_status="regenerating")
+    design["strip_status"] = "regenerating"
 
-    return _design_to_response(design)
+    def pregenerate_strips():
+        try:
+            coordinator.pregenerate_strips_for_design(design, ctx.business_id)
+            CardDesignRepository.update(design["id"], strip_status="ready")
+        except Exception as e:
+            logger.error(f"Strip pre-generation error: {e}")
+            CardDesignRepository.update(design["id"], strip_status="ready")
+
+    background_tasks.add_task(pregenerate_strips)
+
+    return _design_to_response(design, program_total_stamps)
 
 
 @router.put("/{business_id}/{design_id}", response_model=CardDesignResponse)
@@ -211,7 +245,7 @@ async def update_design(
     # Only regenerate if the VALUE actually changed, not just if the field was sent
     strip_affecting_fields = {
         "background_color", "stamp_filled_color", "stamp_empty_color",
-        "stamp_border_color", "total_stamps", "stamp_icon", "reward_icon",
+        "stamp_border_color", "stamp_icon", "reward_icon",
         "icon_color", "strip_background_opacity", "strip_background_path"
     }
     affects_strips = any(
@@ -231,7 +265,7 @@ async def update_design(
                     regenerate_strips=affects_strips,
                 )
             except Exception as e:
-                print(f"Background design update error: {e}")
+                logger.error(f"Background design update error: {e}")
 
         background_tasks.add_task(regenerate_and_notify)
 
@@ -244,12 +278,13 @@ async def update_design(
                 coordinator.pregenerate_strips_for_design(design, ctx.business_id)
                 CardDesignRepository.update(design_id, strip_status="ready")
             except Exception as e:
-                print(f"Strip regeneration error: {e}")
+                logger.error(f"Strip regeneration error: {e}")
                 CardDesignRepository.update(design_id, strip_status="ready")
 
         background_tasks.add_task(regenerate_inactive)
 
-    return _design_to_response(design)
+    total_stamps = _get_program_total_stamps(ctx.business_id)
+    return _design_to_response(design, total_stamps)
 
 
 @router.delete("/{business_id}/{design_id}")
@@ -345,11 +380,12 @@ async def activate_design(
                 regenerate_strips=not result.get("strips_exist", False),
             )
         except Exception as e:
-            print(f"Customer notification error: {e}")
+            logger.error(f"Customer notification error: {e}")
 
     background_tasks.add_task(notify_all_customers)
 
-    return _design_to_response(design)
+    total_stamps = _get_program_total_stamps(ctx.business_id)
+    return _design_to_response(design, total_stamps)
 
 
 @router.post("/{business_id}/{design_id}/upload/logo", response_model=UploadResponse)

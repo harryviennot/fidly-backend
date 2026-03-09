@@ -14,6 +14,7 @@ from app.repositories.card_design import CardDesignRepository
 from app.services.email import get_email_service
 from app.services.wallets import create_pass_coordinator
 from app.core.config import settings
+from app.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,8 @@ def send_contact(request: Request, data: ContactFormRequest):
 
 
 @router.post("/customers/{business_id}", response_model=CustomerPublicResponse)
-def register_customer(business_id: str, data: CustomerPublicCreate):
+@limiter.limit("10/minute")
+def register_customer(request: Request, business_id: str, data: CustomerPublicCreate):
     """
     Public customer registration endpoint.
 
@@ -88,8 +90,10 @@ def register_customer(business_id: str, data: CustomerPublicCreate):
     if data_collection.get("collect_phone") and not data.phone:
         raise HTTPException(status_code=400, detail="Phone number is required")
 
-    # Check if at least one identifier is provided (email or phone)
-    if not data.email and not data.phone:
+    # Only require identifiers if the business actually collects them
+    collect_email = data_collection.get("collect_email", False)
+    collect_phone = data_collection.get("collect_phone", False)
+    if (collect_email or collect_phone) and not data.email and not data.phone:
         raise HTTPException(
             status_code=400,
             detail="At least an email or phone number is required"

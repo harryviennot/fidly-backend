@@ -2,7 +2,7 @@ import time
 from datetime import datetime, timezone
 from email.utils import formatdate, parsedate_to_datetime
 
-from fastapi import APIRouter, HTTPException, Header, Body, Response
+from fastapi import APIRouter, HTTPException, Header, Body, Request, Response
 
 from app.repositories.customer import CustomerRepository
 from app.repositories.device import DeviceRepository
@@ -10,6 +10,11 @@ from app.repositories.card_design import CardDesignRepository
 from app.repositories.business import BusinessRepository
 from app.services.pass_generator import create_pass_generator_for_business, create_pass_generator
 from app.core.security import verify_auth_token
+from app.core.rate_limit import limiter
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_datetime(dt_value) -> datetime | None:
@@ -32,12 +37,15 @@ def _parse_datetime(dt_value) -> datetime | None:
     return None
 
 
-def _get_last_modified(customer: dict, design: dict | None) -> datetime | None:
-    """Get the latest modification time between customer and design."""
-    customer_updated = _parse_datetime(customer.get("updated_at"))
-    design_updated = _parse_datetime(design.get("updated_at")) if design else None
+def _get_last_modified(customer: dict, design: dict | None, business: dict | None = None) -> datetime | None:
+    """Get the latest modification time between customer, design, and business."""
+    candidates = [
+        _parse_datetime(customer.get("updated_at")),
+        _parse_datetime(design.get("updated_at")) if design else None,
+        _parse_datetime(business.get("updated_at")) if business else None,
+    ]
 
-    timestamps = [t for t in [customer_updated, design_updated] if t is not None]
+    timestamps = [t for t in candidates if t is not None]
     return max(timestamps) if timestamps else None
 
 router = APIRouter()
@@ -66,7 +74,7 @@ def register_device_endpoint(
 
     DeviceRepository.register(serial_number, device_library_id, push_token)
 
-    print(f"Device registered: {device_library_id[:20]}... for customer {serial_number[:8]}...")
+    logger.info(f"Device registered: {device_library_id[:20]}... for customer {serial_number[:8]}...")
 
     return Response(status_code=201)
 
@@ -89,7 +97,7 @@ def unregister_device_endpoint(
 
     DeviceRepository.unregister(serial_number, device_library_id)
 
-    print(f"Device unregistered: {device_library_id[:20]}... for customer {serial_number[:8]}...")
+    logger.info(f"Device unregistered: {device_library_id[:20]}... for customer {serial_number[:8]}...")
 
     return Response(status_code=200)
 
@@ -113,11 +121,16 @@ def get_serial_numbers(
             since_dt = datetime.fromtimestamp(since_timestamp, tz=timezone.utc)
 
             filtered = []
+            business_cache = {}
             for serial_number in serial_numbers:
                 customer = CustomerRepository.get_by_id(serial_number)
                 if customer:
-                    design = CardDesignRepository.get_active(customer.get("business_id"))
-                    last_modified = _get_last_modified(customer, design)
+                    bid = customer.get("business_id")
+                    design = CardDesignRepository.get_active(bid)
+                    if bid not in business_cache:
+                        business_cache[bid] = BusinessRepository.get_by_id(bid)
+                    business = business_cache[bid]
+                    last_modified = _get_last_modified(customer, design, business)
 
                     # Include if modified after the given timestamp
                     if last_modified and last_modified > since_dt:
@@ -177,12 +190,15 @@ def get_latest_pass(
     translations = (design.get("translations") or {}) if design else None
 
     # Use per-business certs when business_id is available
+    business_settings = (business.get("settings") or {}) if business else None
+
     if business_id:
         pass_generator = create_pass_generator_for_business(
             business_id,
             design=design,
             primary_locale=primary_locale,
             translations=translations,
+            business_settings=business_settings,
         )
     else:
         pass_generator = create_pass_generator()
@@ -210,9 +226,10 @@ def get_latest_pass(
 
 
 @router.post("/v1/log")
-def receive_logs(body: dict = Body(...)):
+@limiter.limit("30/minute")
+def receive_logs(request: Request, body: dict = Body(...)):
     """Receive error logs from Apple Wallet."""
     logs = body.get("logs", [])
     for log in logs:
-        print(f"Wallet log: {log}")
+        logger.info(f"Wallet log: {log}")
     return Response(status_code=200)

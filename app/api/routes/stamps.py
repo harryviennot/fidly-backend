@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 
 from app.domain.schemas import StampResponse, VoidStampRequest
 from app.repositories.customer import CustomerRepository
@@ -8,8 +8,11 @@ from app.repositories.card_design import CardDesignRepository
 from app.repositories.business import BusinessRepository
 from app.repositories.membership import MembershipRepository
 from app.repositories.transaction import TransactionRepository
+from app.services.programs import ProgramService, EventModifiers
+from app.services.programs.events import EventService
 from app.services.wallets import PassCoordinator, create_pass_coordinator
 from app.core.permissions import require_any_access, BusinessAccessContext
+from app.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +25,9 @@ def get_pass_coordinator() -> PassCoordinator:
 
 
 @router.post("/{business_id}/{customer_id}", response_model=StampResponse)
+@limiter.limit("60/minute")
 async def add_customer_stamp(
+    request: Request,
     customer_id: str,
     ctx: BusinessAccessContext = Depends(require_any_access),
     coordinator: PassCoordinator = Depends(get_pass_coordinator),
@@ -31,63 +36,50 @@ async def add_customer_stamp(
 
     Requires membership in the business (any role: owner or scanner).
     Updates both Apple Wallet and Google Wallet passes.
+
+    Now delegates to ProgramService for the default program.
     """
     customer = CustomerRepository.get_by_id(customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    # Verify customer belongs to the authenticated business
     if customer.get("business_id") != ctx.business_id:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    # Get max stamps from active design for this business
-    max_stamps = 10
-    design = CardDesignRepository.get_active(ctx.business_id)
-    if design:
-        max_stamps = design.get("total_stamps", 10)
+    # Use ProgramService for stamp logic
+    program_service = ProgramService()
 
-    if customer["stamps"] >= max_stamps:
-        return StampResponse(
-            customer_id=customer_id,
-            name=customer["name"],
-            stamps=max_stamps,
-            message="Already at maximum stamps! Ready for reward.",
-        )
-
-    stamps_before = customer["stamps"]
-    new_stamps = CustomerRepository.add_stamp(customer_id, max_stamps)
-
-    # Log transaction (non-blocking)
-    transaction_id = None
+    # Check for active promotional events
     try:
-        txn = TransactionRepository.create(
-            business_id=ctx.business_id,
+        active_events = EventService.get_active_events(ctx.business_id)
+        modifiers = EventService.calculate_modifiers(active_events)
+    except Exception:
+        modifiers = EventModifiers()
+
+    try:
+        result = await program_service.add_progress(
             customer_id=customer_id,
-            type="stamp_added",
-            stamp_delta=1,
-            stamps_before=stamps_before,
-            stamps_after=new_stamps,
+            business_id=ctx.business_id,
             employee_id=ctx.user["id"],
             source="scanner",
+            modifiers=modifiers,
         )
-        if txn:
-            transaction_id = txn["id"]
-    except Exception:
-        logger.error("[Stamps] Failed to log stamp transaction", exc_info=True)
+    except ValueError as e:
+        # Handle "already at max stamps" case
+        if "not active" in str(e).lower():
+            raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # Track scanner activity using authenticated user
+    # Track scanner activity
     try:
         MembershipRepository.record_scan_activity(ctx.user["id"], ctx.business_id)
     except Exception:
-        # Don't fail the stamp operation if activity tracking fails
         pass
 
     # Update wallets (Apple via push, Google via API update)
-    # Get business for Google Wallet updates
     business = BusinessRepository.get_by_id(ctx.business_id)
-
-    # Update customer object with new stamp count for wallet update
-    updated_customer = {**customer, "stamps": new_stamps}
+    design = CardDesignRepository.get_active(ctx.business_id)
+    updated_customer = {**customer, "stamps": result.value_after}
 
     if business and design:
         try:
@@ -97,19 +89,20 @@ async def add_customer_stamp(
                 design=design,
             )
         except Exception as e:
-            # Don't fail the stamp operation if wallet update fails
             logger.error(f"[Stamps] Wallet update error: {e}", exc_info=True)
 
     message = "Stamp added!"
-    if new_stamps == max_stamps:
+    if result.reward_earned:
         message = "Congratulations! You've earned a reward!"
+    elif result.delta == 0:
+        message = "Already at maximum stamps! Ready for reward."
 
     return StampResponse(
         customer_id=customer_id,
         name=customer["name"],
-        stamps=new_stamps,
+        stamps=result.value_after,
         message=message,
-        transaction_id=transaction_id,
+        transaction_id=result.transaction_id,
     )
 
 
@@ -123,68 +116,46 @@ async def redeem_customer_reward(
 
     Requires membership in the business (any role: owner or scanner).
     Updates both Apple Wallet and Google Wallet passes.
+
+    Now delegates to ProgramService for redemption logic.
     """
     customer = CustomerRepository.get_by_id(customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    # Verify customer belongs to the authenticated business
     if customer.get("business_id") != ctx.business_id:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    # Get max stamps from active design for this business
-    max_stamps = 10
-    design = CardDesignRepository.get_active(ctx.business_id)
-    if design:
-        max_stamps = design.get("total_stamps", 10)
+    # Use ProgramService for redemption
+    program_service = ProgramService()
+    program = program_service.get_default_program(ctx.business_id)
+    if not program:
+        raise HTTPException(status_code=500, detail="No default program configured")
 
-    # Check if customer is eligible for reward
-    if customer["stamps"] < max_stamps:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Customer only has {customer['stamps']}/{max_stamps} stamps. Not eligible for reward yet.",
-        )
-
-    # Reset stamps to 0
-    stamps_before = customer["stamps"]
-    CustomerRepository.reset_stamps(customer_id)
-
-    # Increment total redemptions + log transaction (non-blocking)
-    transaction_id = None
-    try:
-        CustomerRepository.increment_redemptions(customer_id)
-    except Exception:
-        logger.error("[Stamps] Failed to increment redemptions", exc_info=True)
+    from app.repositories.enrollment import EnrollmentRepository
+    enrollment = EnrollmentRepository.get_or_create(
+        customer_id, program["id"], program.get("type", "stamp")
+    )
 
     try:
-        txn = TransactionRepository.create(
+        result = await program_service.redeem_reward(
+            enrollment_id=enrollment["id"],
             business_id=ctx.business_id,
-            customer_id=customer_id,
-            type="reward_redeemed",
-            stamp_delta=-stamps_before,
-            stamps_before=stamps_before,
-            stamps_after=0,
             employee_id=ctx.user["id"],
-            source="scanner",
         )
-        if txn:
-            transaction_id = txn["id"]
-    except Exception:
-        logger.error("[Stamps] Failed to log redeem transaction", exc_info=True)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # Track scanner activity using authenticated user
+    # Track scanner activity
     try:
         MembershipRepository.record_scan_activity(ctx.user["id"], ctx.business_id)
     except Exception:
-        # Don't fail the redeem operation if activity tracking fails
         pass
 
-    # Update wallets (Apple via push, Google via API update)
-    # Get business for Google Wallet updates
+    # Update wallets
     business = BusinessRepository.get_by_id(ctx.business_id)
-
-    # Update customer object with reset stamp count for wallet update
-    updated_customer = {**customer, "stamps": 0}
+    design = CardDesignRepository.get_active(ctx.business_id)
+    updated_customer = {**customer, "stamps": result.value_after}
 
     if business and design:
         try:
@@ -194,15 +165,14 @@ async def redeem_customer_reward(
                 design=design,
             )
         except Exception as e:
-            # Don't fail the redeem operation if wallet update fails
             logger.error(f"[Stamps] Wallet update error on redemption: {e}", exc_info=True)
 
     return StampResponse(
         customer_id=customer_id,
         name=customer["name"],
-        stamps=0,
+        stamps=result.value_after,
         message="Reward redeemed! Card has been reset.",
-        transaction_id=transaction_id,
+        transaction_id=result.transaction_id,
     )
 
 
@@ -218,6 +188,7 @@ async def void_customer_stamp(
     Requires membership in the business (any role).
     The original transaction must be stamp_added or bonus_stamp, not already voided,
     and the customer must have stamps > 0.
+
     """
     customer = CustomerRepository.get_by_id(customer_id)
     if not customer:
@@ -240,12 +211,23 @@ async def void_customer_stamp(
     if TransactionRepository.is_already_voided(body.transaction_id):
         raise HTTPException(status_code=409, detail="This transaction has already been voided")
 
-    if customer["stamps"] <= 0:
+    # Resolve enrollment for this customer's default program
+    from app.repositories.enrollment import EnrollmentRepository
+    program_service = ProgramService()
+    program = program_service.get_default_program(ctx.business_id)
+    if not program:
+        raise HTTPException(status_code=500, detail="No default program configured")
+
+    enrollment = EnrollmentRepository.get_by_customer_and_program(customer_id, program["id"])
+    if not enrollment:
+        raise HTTPException(status_code=400, detail="Customer has no enrollment to void")
+
+    stamps_before = enrollment.get("progress", {}).get("stamps", 0)
+    if stamps_before <= 0:
         raise HTTPException(status_code=400, detail="Customer has no stamps to void")
 
-    # Decrement stamp
-    stamps_before = customer["stamps"]
-    new_stamps = CustomerRepository.void_stamp(customer_id)
+    # Atomic decrement via RPC
+    new_stamps = EnrollmentRepository.void_stamp(enrollment["id"])
 
     # Log void transaction
     transaction_id = None

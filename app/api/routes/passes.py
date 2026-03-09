@@ -1,13 +1,15 @@
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.repositories.customer import CustomerRepository
 from app.services.pass_generator import create_pass_generator_with_active_design, create_pass_generator
+from app.core.rate_limit import limiter
 
 router = APIRouter()
 
 
 @router.get("/{customer_id}")
-def download_pass(customer_id: str):
+@limiter.limit("30/minute")
+def download_pass(request: Request, customer_id: str):
     """Download the .pkpass file for a customer."""
     customer = CustomerRepository.get_by_id(customer_id)
     if not customer:

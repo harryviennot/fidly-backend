@@ -4,17 +4,30 @@ import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 from database import init_db
 from app.api import api_router
+from app.core.rate_limit import limiter
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+
+# Suppress noisy library logs (only show warnings/errors)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("hpack").setLevel(logging.WARNING)
+logging.getLogger("supabase").setLevel(logging.WARNING)
+logging.getLogger("postgrest").setLevel(logging.WARNING)
+logging.getLogger("gotrue").setLevel(logging.WARNING)
+logging.getLogger("storage3").setLevel(logging.WARNING)
+logging.getLogger("realtime").setLevel(logging.WARNING)
 
 
 @asynccontextmanager
@@ -76,6 +89,10 @@ def create_app() -> FastAPI:
         version="1.0.0",
         lifespan=lifespan,
     )
+
+    # Rate limiting
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     # Dynamic CORS middleware for subdomain support
     app.add_middleware(DynamicCORSMiddleware)

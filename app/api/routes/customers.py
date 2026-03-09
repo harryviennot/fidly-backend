@@ -1,19 +1,26 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 
-from app.domain.schemas import CustomerResponse
+from app.domain.schemas import CustomerResponse, PaginatedCustomerResponse
 from app.repositories.customer import CustomerRepository
 from app.core.permissions import require_management_access, BusinessAccessContext
 
 router = APIRouter()
 
 
-@router.get("/{business_id}", response_model=list[CustomerResponse])
+@router.get("/{business_id}", response_model=PaginatedCustomerResponse)
 def list_customers(
     ctx: BusinessAccessContext = Depends(require_management_access),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
 ):
-    """Get all customers for a business (requires owner or admin role)."""
-    customers = CustomerRepository.get_all(ctx.business_id)
-    return [CustomerResponse(**c) for c in customers]
+    """Get paginated customers for a business (requires owner or admin role)."""
+    result = CustomerRepository.get_paginated(ctx.business_id, limit=limit, offset=offset)
+    return PaginatedCustomerResponse(
+        data=[CustomerResponse(**c) for c in result["data"]],
+        total=result["total"],
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{business_id}/{customer_id}", response_model=CustomerResponse)

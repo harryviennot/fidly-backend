@@ -19,7 +19,7 @@ def init_db():
     Note: Schema is managed via Supabase migrations, not here.
     """
     if not settings.supabase_url or not settings.supabase_secret_key:
-        print("WARNING: Supabase credentials not configured. Database features disabled.")
+        logger.warning("Supabase credentials not configured. Database features disabled.")
         return
 
     try:
@@ -27,10 +27,10 @@ def init_db():
         client = get_supabase_client()
         # Try a simple query - may fail if migrations haven't run yet
         client.table("businesses").select("id").limit(1).execute()
-        print("Supabase connection verified")
+        logger.info("Supabase connection verified")
     except Exception as e:
-        print(f"WARNING: Supabase connection check failed: {e}")
-        print("Make sure migrations have been run and credentials are correct.")
+        logger.warning(f"Supabase connection check failed: {e}")
+        logger.warning("Make sure migrations have been run and credentials are correct.")
 
 
 def get_db() -> Client:

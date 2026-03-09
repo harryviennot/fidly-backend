@@ -33,6 +33,7 @@ PLAN_LIMITS: dict[SubscriptionTier, PlanLimits] = {
         "features": [
             "basic_analytics",
             "standard_notifications",
+            "single_program",
         ]
     },
     SubscriptionTier.PRO: {
@@ -47,6 +48,10 @@ PLAN_LIMITS: dict[SubscriptionTier, PlanLimits] = {
             "multiple_locations",
             "geofencing",
             "promotional_messaging",
+            "multiple_programs",
+            "promotional_events",
+            "design_schedules",
+            "offline_sync",
         ]
     }
 }

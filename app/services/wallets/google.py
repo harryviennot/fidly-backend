@@ -259,6 +259,22 @@ class GoogleWalletService:
             )
         )
 
+        # Business info fields (from business settings, merged before design back_fields)
+        from app.services.business_info import render_business_info
+        business_settings = business.get("settings") or {}
+        biz_info = business_settings.get("business_info", [])
+        if biz_info:
+            biz_fields = render_business_info(biz_info, primary_locale)
+            hidden_keys = set(design.get("hidden_business_info_keys", []))
+            visible_biz_fields = [f for f in biz_fields if f["key"] not in hidden_keys]
+            text_modules.extend(
+                self._convert_pass_fields_to_text_modules(
+                    visible_biz_fields, "biz_",
+                    translations=None, primary_locale=primary_locale,
+                    array_key=None,
+                )
+            )
+
         # Back fields (displayed in details section only - not in cardRowTemplateInfos)
         back_fields = design.get("back_fields", [])
         text_modules.extend(

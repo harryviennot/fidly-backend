@@ -9,6 +9,7 @@ httpx[http2]==0.26.0
 qrcode[pil]==7.4.2
 pillow>=10.0.0
 python-multipart==0.0.6
+slowapi>=0.1.9
 aioapns==3.2
 supabase>=2.0.0
 python-jose[cryptography]>=3.3.0
