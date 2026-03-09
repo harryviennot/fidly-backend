@@ -15,30 +15,30 @@ This document describes the v2 data model and service layer that cleanly separat
 
 ```
                             ┌──────────────┐
-                            │  businesses   │
+                            │  businesses  │
                             └──────┬───────┘
                  ┌─────────┬───────┼─────────┬──────────────┬───────────────┐
                  │         │       │         │              │               │
                  ▼         ▼       ▼         ▼              ▼               ▼
          ┌───────────┐ ┌──────┐ ┌─────────────────┐ ┌──────────────┐ ┌────────────────────┐
-         │ customers  │ │users │ │loyalty_programs  │ │business_     │ │promotional_        │
+         │ customers │ │users │ │loyalty_programs │ │business_     │ │promotional_        │
          └─────┬─────┘ └──────┘ └──┬──────┬───────┘ │locations     │ │events              │
-               │                   │      │          └──────────────┘ └────────────────────┘
+               │                   │      │         └──────────────┘ └────────────────────┘
                │                   │      │
                │     ┌─────────────┘      │
                │     │                    │
                ▼     ▼                    ▼
          ┌──────────────┐          ┌─────────────┐
-         │ enrollments   │          │card_designs  │
+         │ enrollments  │          │card_designs │
          └──────┬───────┘          └──────┬──────┘
                 │                         │
                 │                         ▼
                 │                  ┌──────────────────┐
-                │                  │design_schedules   │
+                │                  │design_schedules  │
                 │                  └──────────────────┘
                 ▼
          ┌──────────────┐
-         │ transactions  │
+         │ transactions │
          └──────────────┘
 
   loyalty_programs ──< notification_templates
