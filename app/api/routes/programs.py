@@ -9,7 +9,7 @@ from app.repositories.program import ProgramRepository
 from app.repositories.business import BusinessRepository
 from app.repositories.card_design import CardDesignRepository
 from app.services.wallets import create_pass_coordinator
-from app.core.permissions import require_management_access, BusinessAccessContext
+from app.core.permissions import require_management_access, require_owner_access, BusinessAccessContext
 from app.core.features import has_feature
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ def list_programs(
 @router.post("/{business_id}")
 def create_program(
     body: dict,
-    ctx: BusinessAccessContext = Depends(require_management_access),
+    ctx: BusinessAccessContext = Depends(require_owner_access),
 ):
     """Create a new loyalty program."""
     business = BusinessRepository.get_by_id(ctx.business_id)
@@ -95,7 +95,7 @@ def update_program(
     program_id: str,
     body: dict,
     background_tasks: BackgroundTasks,
-    ctx: BusinessAccessContext = Depends(require_management_access),
+    ctx: BusinessAccessContext = Depends(require_owner_access),
 ):
     """Update a program."""
     program = ProgramRepository.get_by_id(program_id)
@@ -154,7 +154,7 @@ def update_program(
 @router.post("/{business_id}/{program_id}/activate")
 def activate_program(
     program_id: str,
-    ctx: BusinessAccessContext = Depends(require_management_access),
+    ctx: BusinessAccessContext = Depends(require_owner_access),
 ):
     """Activate a program."""
     program = ProgramRepository.get_by_id(program_id)
@@ -168,7 +168,7 @@ def activate_program(
 @router.post("/{business_id}/{program_id}/deactivate")
 def deactivate_program(
     program_id: str,
-    ctx: BusinessAccessContext = Depends(require_management_access),
+    ctx: BusinessAccessContext = Depends(require_owner_access),
 ):
     """Deactivate a program."""
     program = ProgramRepository.get_by_id(program_id)
