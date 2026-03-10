@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends
 
 from database.connection import get_db
 from app.repositories.business import BusinessRepository
-from app.core.permissions import require_management_access, BusinessAccessContext
+from app.core.permissions import require_management_access, require_owner_access, BusinessAccessContext
 from app.core.features import has_feature
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ def list_locations(
 @router.post("/{business_id}")
 def create_location(
     body: dict,
-    ctx: BusinessAccessContext = Depends(require_management_access),
+    ctx: BusinessAccessContext = Depends(require_owner_access),
 ):
     """Add a business location."""
     business = BusinessRepository.get_by_id(ctx.business_id)
@@ -66,7 +66,7 @@ def create_location(
 def update_location(
     location_id: str,
     body: dict,
-    ctx: BusinessAccessContext = Depends(require_management_access),
+    ctx: BusinessAccessContext = Depends(require_owner_access),
 ):
     """Update a business location."""
     db = get_db()
@@ -85,7 +85,7 @@ def update_location(
 @router.delete("/{business_id}/{location_id}")
 def delete_location(
     location_id: str,
-    ctx: BusinessAccessContext = Depends(require_management_access),
+    ctx: BusinessAccessContext = Depends(require_owner_access),
 ):
     """Delete a business location."""
     db = get_db()
