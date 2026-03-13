@@ -41,9 +41,9 @@ def create_business(
     final_settings = data.settings or {}
     if "customer_data_collection" not in final_settings:
         final_settings["customer_data_collection"] = {
-            "collect_name": True,
-            "collect_email": True,
-            "collect_phone": False,
+            "collect_name": "required",
+            "collect_email": "required",
+            "collect_phone": "off",
         }
 
     business = BusinessRepository.create(

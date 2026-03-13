@@ -267,6 +267,9 @@ class CardDesignUpdate(BaseModel):
     reward_icon: Optional[str] = None
     icon_color: Optional[str] = None
 
+    # Logo (used for explicit clearing; uploads go through /upload/logo endpoint)
+    logo_url: Optional[str] = None
+
     # Strip background
     strip_background_url: Optional[str] = None
     strip_background_opacity: Optional[int] = Field(default=None, ge=0, le=100)
