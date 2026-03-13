@@ -269,9 +269,14 @@ async def update_design(
         "stamp_border_color", "stamp_icon", "reward_icon",
         "icon_color", "strip_background_opacity", "strip_background_path"
     }
-    affects_strips = any(
-        field in update_data and update_data[field] != existing.get(field)
-        for field in strip_affecting_fields
+    affects_strips = (
+        # strip_background_path uses storage upsert — URL is always the same path even when
+        # image content changes, so skip value comparison and always regenerate when present.
+        "strip_background_path" in update_data
+        or any(
+            field in update_data and update_data[field] != existing.get(field)
+            for field in strip_affecting_fields - {"strip_background_path"}
+        )
     )
 
     if update_data and existing.get("is_active"):
