@@ -75,25 +75,35 @@ def register_customer(request: Request, business_id: str, data: CustomerPublicCr
     # Get customer data collection settings
     business_settings = business.get("settings", {})
     data_collection = business_settings.get("customer_data_collection", {
-        "collect_name": True,
-        "collect_email": True,
-        "collect_phone": False,
+        "collect_name": "required",
+        "collect_email": "required",
+        "collect_phone": "off",
     })
 
+    # Normalize legacy boolean values: True -> "required", False -> "off"
+    def _normalize(val):
+        if val is True:
+            return "required"
+        if val is False:
+            return "off"
+        return val or "off"
+
+    name_mode = _normalize(data_collection.get("collect_name"))
+    email_mode = _normalize(data_collection.get("collect_email"))
+    phone_mode = _normalize(data_collection.get("collect_phone"))
+
     # Validate required fields based on business settings
-    if data_collection.get("collect_name") and not data.name:
+    if name_mode == "required" and not data.name:
         raise HTTPException(status_code=400, detail="Name is required")
 
-    if data_collection.get("collect_email") and not data.email:
+    if email_mode == "required" and not data.email:
         raise HTTPException(status_code=400, detail="Email is required")
 
-    if data_collection.get("collect_phone") and not data.phone:
+    if phone_mode == "required" and not data.phone:
         raise HTTPException(status_code=400, detail="Phone number is required")
 
-    # Only require identifiers if the business actually collects them
-    collect_email = data_collection.get("collect_email", False)
-    collect_phone = data_collection.get("collect_phone", False)
-    if (collect_email or collect_phone) and not data.email and not data.phone:
+    # Only require at least one identifier if business requires email or phone
+    if (email_mode == "required" or phone_mode == "required") and not data.email and not data.phone:
         raise HTTPException(
             status_code=400,
             detail="At least an email or phone number is required"
