@@ -214,27 +214,48 @@ async def update_design(
     if existing.get("business_id") != ctx.business_id:
         raise HTTPException(status_code=404, detail="Design not found")
 
+    # Virtual URL fields → actual DB column names
+    url_to_db_field = {
+        "strip_background_url": "strip_background_path",
+        "logo_url": "logo_path",
+    }
+
     # Fields that can be explicitly cleared (set to null)
-    clearable_fields = {"strip_background_url"}
+    clearable_fields = {"strip_background_url", "logo_url"}
+
+    # Storage filenames for clearable asset fields
+    clearable_storage_files = {
+        "strip_background_url": "strip_background.png",
+        "logo_url": "logo.png",
+    }
+
+    storage = get_storage_service()
 
     # Build update dict from non-None fields
     update_data = {}
     for field, value in data.model_dump(exclude_unset=True).items():
+        db_field = url_to_db_field.get(field, field)
         if value is None and field in clearable_fields:
-            # Map URL field to DB path column and set to None
-            update_data["strip_background_path"] = None
+            if existing.get(db_field) is not None:  # Only update if actually changing
+                update_data[db_field] = None
+                filename = clearable_storage_files.get(field)
+                if filename:
+                    storage.delete_file(
+                        storage.BUSINESSES_BUCKET,
+                        storage._card_asset_path(ctx.business_id, design_id, filename),
+                    )
         elif value is not None:
             # Convert PassField lists to dicts
             if field in ["secondary_fields", "auxiliary_fields", "back_fields"]:
-                update_data[field] = [f if isinstance(f, dict) else f.model_dump() for f in value]
+                update_data[db_field] = [f if isinstance(f, dict) else f.model_dump() for f in value]
             elif field == "translations":
                 # Serialize DesignTranslation models to plain dicts for JSONB
-                update_data[field] = {
+                update_data[db_field] = {
                     locale: (t if isinstance(t, dict) else t)
                     for locale, t in value.items()
                 }
             else:
-                update_data[field] = value
+                update_data[db_field] = value
 
     if update_data:
         design = CardDesignRepository.update(design_id, **update_data)
