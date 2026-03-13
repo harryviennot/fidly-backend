@@ -179,7 +179,7 @@ def get_business_stats(
     active_design = None
     design_result = (
         db.table("card_designs")
-        .select("id, name, organization_name, background_color, foreground_color")
+        .select("*")
         .eq("business_id", business_id)
         .eq("is_active", True)
         .limit(1)
